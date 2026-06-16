@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>مركز وسام للإلكترونيات</title>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', sans-serif; background: #f4f7f9; padding: 10px; color: #333; }
@@ -39,9 +38,9 @@
         .total-row { background: #e8f5e9; padding: 10px; border-radius: 6px; text-align: center; font-weight: bold; margin-top: 10px; }
         .barcode-container { display: flex; gap: 5px; }
         .scan-btn { background: #34495e; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; }
-        #scanner-wrapper { display: none; background: white; padding: 10px; border-radius: 12px; margin-bottom: 15px; text-align: center; position: relative; z-index: 100; }
-        #reader { width: 100%; max-width: 300px; margin: 0 auto; border: 2px solid #3498db; border-radius: 8px; overflow: hidden; }
-        .close-scan-btn { background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 6px; margin-top: 10px; cursor: pointer; font-weight: bold; }
+        #scanner-wrapper { display: none; background: #000; padding: 0; border-radius: 12px; margin-bottom: 15px; text-align: center; position: relative; z-index: 100; overflow: hidden; }
+        #scanner-video { width: 100%; max-width: 350px; height: auto; display: block; margin: 0 auto; }
+        .close-scan-btn { background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 6px; margin: 10px; cursor: pointer; font-weight: bold; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -52,8 +51,8 @@
     <div id="notification" class="notification"></div>
 
     <div id="scanner-wrapper">
-        <h4 style="margin-bottom:8px;">وجه الكاميرا نحو الباركود</h4>
-        <div id="reader"></div>
+        <video id="scanner-video" autoplay playsinline></video>
+        <canvas id="scanner-canvas" style="display:none;"></canvas>
         <button class="close-scan-btn" onclick="stopScanner()">إلغاء المسح</button>
     </div>
 
@@ -72,9 +71,9 @@
             <form id="maintenanceForm" autocomplete="off">
                 <input type="hidden" id="editId">
                 <div class="form-group">
-                    <label>الباركود:</label>
+                    <label>الباركود (رقم السيريال):</label>
                     <div class="barcode-container">
-                        <input type="text" id="serialNumber" required placeholder="رقم السيريال">
+                        <input type="text" id="serialNumber" required placeholder="أدخل رقم السيريال">
                         <button type="button" class="scan-btn" onclick="startScanner('form')">📷 مسح</button>
                     </div>
                 </div>
@@ -211,10 +210,10 @@
         <div class="card">
             <h3 style="margin-bottom:15px; text-align:center;">📊 التقرير المالي</h3>
             <div class="stats-grid">
-                <div class="stat-box"><span class="stat-num" id="rptSales">0</span><span class="stat-label">💰 إجمالي المبيعات</span></div>
+                <div class="stat-box"><span class="stat-num" id="rptSales">0</span><span class="stat-label">💰 المبيعات</span></div>
                 <div class="stat-box"><span class="stat-num" id="rptMaintenance">0</span><span class="stat-label">🔧 أرباح الصيانة</span></div>
-                <div class="stat-box"><span class="stat-num" id="rptExpenses">0</span><span class="stat-label">💸 إجمالي المصاريف</span></div>
-                <div class="stat-box"><span class="stat-num" id="rptInventory">0</span><span class="stat-label">📦 قيمة المخزن</span></div>
+                <div class="stat-box"><span class="stat-num" id="rptExpenses">0</span><span class="stat-label">💸 المصاريف</span></div>
+                <div class="stat-box"><span class="stat-num" id="rptInventory">0</span><span class="stat-label">📦 المخزن</span></div>
             </div>
             <div class="total-row">
                 <span style="font-size:18px;">📈 صافي الربح: <span id="rptNetProfit" style="color:#2e7d32;">0.00</span> ل.س</span>
@@ -224,133 +223,150 @@
 </div>
 
 <script>
-    // ==================== قاعدة البيانات ====================
-    let db;
-    let html5QrcodeScanner = null;
-    let currentScanTarget = 'form';
+// ==================== قاعدة البيانات ====================
+let db;
+let scannerStream = null;
+let scannerInterval = null;
+let currentScanTarget = 'form';
 
-    function openDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open("WesamFullDB", 3);
-            request.onupgradeneeded = function(e) {
-                const database = e.target.result;
-                if (!database.objectStoreNames.contains("orders")) {
-                    database.createObjectStore("orders", { keyPath: "id", autoIncrement: true });
-                }
-                if (!database.objectStoreNames.contains("inventory")) {
-                    database.createObjectStore("inventory", { keyPath: "id", autoIncrement: true });
-                }
-                if (!database.objectStoreNames.contains("sales")) {
-                    database.createObjectStore("sales", { keyPath: "id", autoIncrement: true });
-                }
-                if (!database.objectStoreNames.contains("expenses")) {
-                    database.createObjectStore("expenses", { keyPath: "id", autoIncrement: true });
-                }
-            };
-            request.onsuccess = function(e) { db = e.target.result; console.log("✅ DB ready"); resolve(db); };
-            request.onerror = function(e) { console.error("❌ DB error:", e.target.error); reject(e.target.error); };
-        });
-    }
-
-    function getStore(storeName, mode = "readonly") {
-        const tx = db.transaction(storeName, mode);
-        return tx.objectStore(storeName);
-    }
-
-    function getAll(storeName) {
-        return new Promise((resolve, reject) => {
-            const store = getStore(storeName);
-            const req = store.getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = (e) => reject(e.target.error);
-        });
-    }
-
-    function addItem(storeName, item) {
-        return new Promise((resolve, reject) => {
-            const store = getStore(storeName, "readwrite");
-            const req = store.add(item);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = (e) => reject(e.target.error);
-        });
-    }
-
-    function updateItem(storeName, item) {
-        return new Promise((resolve, reject) => {
-            const store = getStore(storeName, "readwrite");
-            const req = store.put(item);
-            req.onsuccess = () => resolve();
-            req.onerror = (e) => reject(e.target.error);
-        });
-    }
-
-    function deleteItem(storeName, id) {
-        return new Promise((resolve, reject) => {
-            const store = getStore(storeName, "readwrite");
-            const req = store.delete(id);
-            req.onsuccess = () => resolve();
-            req.onerror = (e) => reject(e.target.error);
-        });
-    }
-
-    function getItem(storeName, id) {
-        return new Promise((resolve, reject) => {
-            const store = getStore(storeName);
-            const req = store.get(id);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = (e) => reject(e.target.error);
-        });
-    }
-
-    // ==================== التنقل ====================
-    function switchSection(section) {
-        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-        document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
-        
-        const sectionEl = document.getElementById('section-' + section);
-        if (sectionEl) sectionEl.classList.add('active');
-        
-        const clickedTab = event.target;
-        if (clickedTab && clickedTab.classList.contains('main-tab')) {
-            clickedTab.classList.add('active');
-        }
-        
-        stopScanner();
-        
-        if (section === 'maintenance') loadMaintenance();
-        if (section === 'inventory') loadInventory();
-        if (section === 'sales') { loadInventoryForSale(); loadSales(); }
-        if (section === 'expenses') loadExpenses();
-        if (section === 'reports') loadReports();
-    }
-
-    function notify(msg, type = 'success') {
-        const n = document.getElementById('notification');
-        if (!n) return;
-        n.textContent = msg;
-        n.style.background = type === 'success' ? '#27ae60' : '#e74c3c';
-        n.style.display = 'block';
-        clearTimeout(n._timeout);
-        n._timeout = setTimeout(() => { n.style.display = 'none'; }, 2000);
-    }
-
-    // ==================== الصيانة ====================
-    document.getElementById('maintenanceForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const editId = document.getElementById('editId').value;
-        const order = {
-            serialNumber: document.getElementById('serialNumber').value.trim(),
-            customerName: document.getElementById('customerName').value.trim(),
-            customerPhone: document.getElementById('customerPhone').value.trim(),
-            deviceType: document.getElementById('deviceType').value.trim(),
-            deviceFault: document.getElementById('deviceFault').value.trim(),
-            receiveDate: document.getElementById('receiveDate').value,
-            status: document.getElementById('statusSelect').value,
-            partsCost: parseFloat(document.getElementById('partsCost').value) || 0,
-            repairCharge: parseFloat(document.getElementById('repairCharge').value) || 0,
-            paidAmount: parseFloat(document.getElementById('paidAmount').value) || 0,
-            paymentStatus: document.getElementById('paymentStatus').value === 'true',
-            createdAt: new Date().toISOString()
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open("WesamFullDB", 3);
+        request.onupgradeneeded = function(e) {
+            const database = e.target.result;
+            if (!database.objectStoreNames.contains("orders")) database.createObjectStore("orders", { keyPath: "id", autoIncrement: true });
+            if (!database.objectStoreNames.contains("inventory")) database.createObjectStore("inventory", { keyPath: "id", autoIncrement: true });
+            if (!database.objectStoreNames.contains("sales")) database.createObjectStore("sales", { keyPath: "id", autoIncrement: true });
+            if (!database.objectStoreNames.contains("expenses")) database.createObjectStore("expenses", { keyPath: "id", autoIncrement: true });
         };
-        order.totalCost = order.partsCost + order.repairCharge;
-        order.profit = order.paidAmount - order.totalCost
+        request.onsuccess = function(e) { db = e.target.result; console.log("✅ DB ready"); resolve(db); };
+        request.onerror = function(e) { reject(e.target.error); };
+    });
+}
+
+function getStore(storeName, mode = "readonly") { return db.transaction(storeName, mode).objectStore(storeName); }
+
+function getAll(storeName) {
+    return new Promise((resolve, reject) => {
+        const req = getStore(storeName).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function addItem(storeName, item) {
+    return new Promise((resolve, reject) => {
+        const req = getStore(storeName, "readwrite").add(item);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function updateItem(storeName, item) {
+    return new Promise((resolve, reject) => {
+        const req = getStore(storeName, "readwrite").put(item);
+        req.onsuccess = () => resolve();
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function deleteItem(storeName, id) {
+    return new Promise((resolve, reject) => {
+        const req = getStore(storeName, "readwrite").delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function getItem(storeName, id) {
+    return new Promise((resolve, reject) => {
+        const req = getStore(storeName).get(id);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = (e) => reject(e.target.error);
+    });
+}
+
+// ==================== التنقل ====================
+function switchSection(section) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+    
+    const sectionEl = document.getElementById('section-' + section);
+    if (sectionEl) sectionEl.classList.add('active');
+    if (event && event.target && event.target.classList.contains('main-tab')) event.target.classList.add('active');
+    
+    stopScanner();
+    if (section === 'maintenance') loadMaintenance();
+    if (section === 'inventory') loadInventory();
+    if (section === 'sales') { loadInventoryForSale(); loadSales(); }
+    if (section === 'expenses') loadExpenses();
+    if (section === 'reports') loadReports();
+}
+
+function notify(msg, type = 'success') {
+    const n = document.getElementById('notification');
+    if (!n) return;
+    n.textContent = msg;
+    n.style.background = type === 'success' ? '#27ae60' : '#e74c3c';
+    n.style.display = 'block';
+    clearTimeout(n._timeout);
+    n._timeout = setTimeout(() => { n.style.display = 'none'; }, 2000);
+}
+
+// ==================== الكاميرا بدون مكتبات ====================
+function startScanner(target) {
+    currentScanTarget = target;
+    const wrapper = document.getElementById('scanner-wrapper');
+    const video = document.getElementById('scanner-video');
+    
+    if (!wrapper || !video) return;
+    
+    wrapper.style.display = 'block';
+    
+    // استخدام الكاميرا مباشرة
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(function(stream) {
+                scannerStream = stream;
+                video.srcObject = stream;
+                video.play();
+                notify('الكاميرا جاهزة - وجهها نحو الباركود');
+                
+                // محاولة استخدام BarcodeDetector إذا كان متاحاً
+                if ('BarcodeDetector' in window) {
+                    startBarcodeDetector();
+                } else {
+                    notify('الكاميرا جاهزة - سيتم إدخال الباركود يدوياً بعد التصوير', 'error');
+                    // إضافة زر لالتقاط صورة
+                    addCaptureButton();
+                }
+            })
+            .catch(function(err) {
+                console.error("Camera error:", err);
+                notify('تعذر الوصول للكاميرا. تأكد من الصلاحيات.', 'error');
+                stopScanner();
+            });
+    } else {
+        notify('متصفحك لا يدعم الكاميرا', 'error');
+        stopScanner();
+    }
+}
+
+function addCaptureButton() {
+    const wrapper = document.getElementById('scanner-wrapper');
+    // إزالة زر قديم إذا وجد
+    const oldBtn = document.getElementById('capture-btn');
+    if (oldBtn) oldBtn.remove();
+    
+    const btn = document.createElement('button');
+    btn.id = 'capture-btn';
+    btn.textContent = '📸 التقط صورة للباركود';
+    btn.style.cssText = 'background:#2980b9;color:white;border:none;padding:10px 20px;border-radius:6px;margin:10px;font-weight:bold;cursor:pointer;font-size:14px;';
+    btn.onclick = function() {
+        notify('الرجاء إدخال الباركود يدوياً في الخانة المخصصة');
+        stopScanner();
+    };
+    wrapper.appendChild(btn);
+}
+
+functio
