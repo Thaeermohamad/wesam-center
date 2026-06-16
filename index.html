@@ -3,70 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>مركز وسام للإلكترونيات</title>
+<title>مركز الصيانة PRO</title>
 
 <style>
 body{font-family:Segoe UI;background:#f4f7f9;margin:0;padding:15px}
-.container{max-width:750px;margin:auto}
+.container{max-width:800px;margin:auto}
 
-.card{
-background:#fff;
-padding:15px;
-border-radius:12px;
-margin-bottom:12px;
-box-shadow:0 4px 12px rgba(0,0,0,0.08)
-}
-
-h2{text-align:center;margin:10px 0;color:#2c3e50}
+.card{background:#fff;padding:15px;border-radius:12px;margin-bottom:10px;box-shadow:0 3px 10px rgba(0,0,0,0.1)}
 
 input,select,textarea,button{
-width:100%;
-padding:10px;
-margin-top:6px;
-border-radius:8px;
-border:1px solid #ccc;
-font-size:14px
+width:100%;padding:10px;margin-top:5px;border-radius:8px;border:1px solid #ccc
 }
 
 .row{display:flex;gap:8px}
 .row>*{flex:1}
 
 .btn{background:#2980b9;color:#fff;border:none}
-.btn-red{background:#e74c3c;color:#fff;border:none}
 .btn-green{background:#27ae60;color:#fff;border:none}
-.btn-purple{background:#8e44ad;color:#fff;border:none}
+.btn-red{background:#e74c3c;color:#fff;border:none}
 
-.order{
-background:#fff;
-padding:12px;
-border-radius:10px;
-margin:10px 0;
-border-right:6px solid #bdc3c7
+.item{
+background:#fff;padding:12px;border-radius:10px;margin:10px 0;
+border-right:6px solid #ccc
 }
 
 .waiting{border-color:#f39c12}
 .fixing{border-color:#3498db}
 .done{border-color:#2ecc71}
 
-.small{font-size:12px;color:#666}
-
-.stats{
-display:flex;
-gap:8px;
-margin-bottom:10px
-}
-
-.stats div{
-flex:1;
-background:#fff;
-padding:10px;
-border-radius:10px;
-text-align:center;
-box-shadow:0 2px 6px rgba(0,0,0,0.05)
-}
-
 video{width:100%;border-radius:10px}
 #scanner{display:none}
+.small{font-size:12px;color:#666}
 </style>
 </head>
 
@@ -74,17 +41,21 @@ video{width:100%;border-radius:10px}
 
 <div class="container">
 
-<h2>📱 مركز وسام للإلكترونيات</h2>
+<h2>📱 مركز وسام PRO</h2>
 
 <div class="card">
 
 <input id="serial" placeholder="الباركود">
-<button class="btn" onclick="startCamera()">📷 فتح الكاميرا</button>
+
+<button class="btn" onclick="startCam()">📷 كاميرا</button>
 
 <input id="name" placeholder="اسم الزبون">
-<input id="phone" placeholder="رقم الهاتف">
+<input id="phone" placeholder="الهاتف">
 <input id="device" placeholder="نوع الجهاز">
-<textarea id="fault" placeholder="وصف العطل"></textarea>
+
+<textarea id="fault" placeholder="العطل"></textarea>
+
+<input type="date" id="date">
 
 <div class="row">
 <input id="cost" type="number" placeholder="تكلفة" oninput="calc()">
@@ -93,36 +64,35 @@ video{width:100%;border-radius:10px}
 
 <div class="row">
 <input id="paid" type="number" placeholder="مدفوع" oninput="calc()">
+<select id="delivered">
+<option value="no">لم يُسلّم</option>
+<option value="yes">تم التسليم</option>
+</select>
+</div>
+
 <select id="status">
 <option value="waiting">انتظار</option>
 <option value="fixing">صيانة</option>
 <option value="done">جاهز</option>
 </select>
-</div>
 
 <div id="calcBox">💰</div>
 
 <button class="btn-green" onclick="save()">حفظ</button>
-<button class="btn-red" onclick="resetForm()">إلغاء</button>
 
-</div>
-
-<div class="stats">
-<div>⏳ <span id="w">0</span></div>
-<div>🔧 <span id="f">0</span></div>
-<div>✅ <span id="d">0</span></div>
 </div>
 
 <div class="card">
-<input id="search" placeholder="بحث..." oninput="load()">
+<input id="search" placeholder="بحث..." oninput="render()">
+<button onclick="autoFill()">تعبئة تلقائية</button>
 </div>
 
 <div id="list"></div>
 
-<!-- الكاميرا -->
+<!-- Camera -->
 <div class="card" id="scanner">
 <video id="video" autoplay></video>
-<button class="btn-red" onclick="stopCamera()">إغلاق</button>
+<button class="btn-red" onclick="stopCam()">إغلاق</button>
 </div>
 
 </div>
@@ -130,25 +100,20 @@ video{width:100%;border-radius:10px}
 <script>
 
 let db;
-let editId=null;
-let stream=null;
+let stream;
 
-/* ================= DB ================= */
-function initDB(){
-let req=indexedDB.open("wesamDB",1);
-
-req.onupgradeneeded=e=>{
+/* DB */
+indexedDB.open("repairDB",1).onupgradeneeded=e=>{
 let db=e.target.result;
 db.createObjectStore("orders",{keyPath:"id",autoIncrement:true});
 };
 
-req.onsuccess=e=>{
-db=e.target.result;
-load();
-};
+function getDB(cb){
+let req=indexedDB.open("repairDB",1);
+req.onsuccess=e=>cb(e.target.result);
 }
 
-/* ================= CALC ================= */
+/* calc */
 function calc(){
 let c=+cost.value||0;
 let ch=+charge.value||0;
@@ -156,38 +121,33 @@ let p=+paid.value||0;
 calcBox.innerText="💰 التكلفة: "+(c+ch)+" | الربح: "+(p-(c+ch));
 }
 
-/* ================= SAVE ================= */
+/* save */
 function save(){
-let obj={
+getDB(db=>{
+let tx=db.transaction("orders","readwrite");
+let st=tx.objectStore("orders");
+
+st.add({
 serial:serial.value,
 name:name.value,
 phone:phone.value,
 device:device.value,
 fault:fault.value,
+date:date.value,
 cost:+cost.value||0,
 charge:+charge.value||0,
 paid:+paid.value||0,
-status:status.value
-};
+status:status.value,
+delivered:delivered.value
+});
 
-let tx=db.transaction("orders","readwrite");
-let st=tx.objectStore("orders");
-
-if(editId){
-obj.id=editId;
-st.put(obj);
-}else{
-st.add(obj);
+tx.oncomplete=render;
+});
 }
 
-tx.oncomplete=()=>{
-resetForm();
-load();
-};
-}
-
-/* ================= LOAD ================= */
-function load(){
+/* render */
+function render(){
+getDB(db=>{
 let tx=db.transaction("orders","readonly");
 let st=tx.objectStore("orders");
 let req=st.getAll();
@@ -196,6 +156,7 @@ req.onsuccess=()=>{
 let data=req.result;
 
 let s=search.value.toLowerCase();
+
 if(s){
 data=data.filter(x=>
 (x.serial||"").includes(s)||
@@ -206,129 +167,77 @@ data=data.filter(x=>
 
 list.innerHTML="";
 
-let w=0,f=0,d=0;
-
 data.forEach(x=>{
-
-if(x.status=="waiting")w++;
-if(x.status=="fixing")f++;
-if(x.status=="done")d++;
+let profit=(x.paid-(x.cost+x.charge));
 
 let div=document.createElement("div");
-div.className="order "+x.status;
+div.className="item "+x.status;
 
 div.innerHTML=`
-<b>${x.name}</b><br>
-<span class="small">${x.device}</span><br>
+<b>👤 ${x.name}</b><br>
 📞 ${x.phone}<br>
 🔢 ${x.serial}<br>
-💰 ربح: ${x.paid-(x.cost+x.charge)}<br>
-
-<button onclick="edit(${x.id})">تعديل</button>
-<button onclick="del(${x.id})" class="btn-red">حذف</button>
-<button onclick="toggle(${x.id})" class="btn-purple">تغيير الحالة</button>
+📅 ${x.date||""}<br>
+💰 ربح: ${profit}<br>
+📦 ${x.delivered=="yes"?"تم التسليم":"لم يُسلّم"}
 `;
 
 list.appendChild(div);
 });
-
-w.innerText=w;
-f.innerText=f;
-d.innerText=d;
 };
-}
-
-/* ================= EDIT ================= */
-function edit(id){
-let tx=db.transaction("orders","readonly");
-let st=tx.objectStore("orders");
-
-st.get(id).onsuccess=e=>{
-let x=e.target.result;
-editId=x.id;
-
-serial.value=x.serial;
-name.value=x.name;
-phone.value=x.phone;
-device.value=x.device;
-fault.value=x.fault;
-cost.value=x.cost;
-charge.value=x.charge;
-paid.value=x.paid;
-status.value=x.status;
-
-calc();
-};
-}
-
-/* ================= DELETE ================= */
-function del(id){
-let tx=db.transaction("orders","readwrite");
-tx.objectStore("orders").delete(id);
-tx.oncomplete=load;
-}
-
-/* ================= STATUS ================= */
-function toggle(id){
-let tx=db.transaction("orders","readwrite");
-let st=tx.objectStore("orders");
-
-st.get(id).onsuccess=e=>{
-let x=e.target.result;
-
-let arr=["waiting","fixing","done"];
-let i=arr.indexOf(x.status);
-x.status=arr[(i+1)%3];
-
-st.put(x);
-load();
-};
-}
-
-/* ================= RESET ================= */
-function resetForm(){
-editId=null;
-serial.value=name.value=phone.value=device.value=fault.value="";
-cost.value=charge.value=paid.value="";
-calc();
-}
-
-/* ================= CAMERA ================= */
-function startCamera(){
-document.getElementById("scanner").style.display="block";
-
-navigator.mediaDevices.getUserMedia({
-video:{facingMode:"environment"}
-})
-.then(s=>{
-stream=s;
-video.srcObject=s;
-scan();
 });
 }
 
-function scan(){
-if("BarcodeDetector" in window){
-let d=new BarcodeDetector({formats:["qr_code","code_128","ean_13"]});
+/* auto fill search */
+function autoFill(){
+let key=search.value.toLowerCase();
 
-setInterval(async ()=>{
-let res=await d.detect(video);
-if(res.length>0){
-serial.value=res[0].rawValue;
-stopCamera();
+getDB(db=>{
+let tx=db.transaction("orders","readonly");
+let st=tx.objectStore("orders");
+
+st.getAll().onsuccess=e=>{
+let found=e.target.result.find(x=>
+(x.serial||"").includes(key)||
+(x.name||"").includes(key)||
+(x.phone||"").includes(key)
+);
+
+if(found){
+name.value=found.name;
+phone.value=found.phone;
+device.value=found.device;
+serial.value=found.serial;
+fault.value=found.fault;
+date.value=found.date;
+cost.value=found.cost;
+charge.value=found.charge;
+paid.value=found.paid;
+status.value=found.status;
+delivered.value=found.delivered;
+calc();
 }
-},1000);
-}
+};
+});
 }
 
-function stopCamera(){
-if(stream){
-stream.getTracks().forEach(t=>t.stop());
+/* CAMERA */
+function startCam(){
+scanner.style.display="block";
+
+navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+.then(s=>{
+stream=s;
+video.srcObject=s;
+});
 }
+
+function stopCam(){
+if(stream) stream.getTracks().forEach(t=>t.stop());
 scanner.style.display="none";
 }
 
-initDB();
+render();
 </script>
 
 </body>
