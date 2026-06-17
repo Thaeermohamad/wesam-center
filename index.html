@@ -5,362 +5,313 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مركز وسام للإلكترونيات</title>
     <style>
-        :root { --waiting: #e67e22; --fixing: #3498db; --done: #27ae60; --archived: #7f8c8d; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f9; padding: 10px; color: #333; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f9; padding: 15px; color: #333; }
         .container { max-width: 600px; margin: 0 auto; }
-        h2 { text-align: center; margin: 10px 0; color: #2c3e50; }
-        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 15px; }
-        input, select, textarea { width: 100%; padding: 10px; margin: 6px 0; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
-        .flex { display: flex; gap: 8px; }
-        .flex>* { flex: 1; }
-        .btn { padding: 10px; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold; font-size: 14px; }
-        .btn-blue { background: #2980b9; }
-        .btn-green { background: #27ae60; }
-        .btn-red { background: #e74c3c; }
-        .btn-orange { background: #f39c12; }
-        .btn-purple { background: #8e44ad; }
-        .btn-gray { background: #95a5a6; }
-        .btn-sm { padding: 5px 8px; font-size: 11px; border-radius: 4px; border: none; cursor: pointer; color: white; font-weight: bold; }
-        .total-box { padding: 10px; border-radius: 6px; text-align: center; font-weight: bold; margin: 8px 0; }
-        .total-cost { background: #e8f5e9; color: #2e7d32; }
-        .total-profit { background: #fff3e0; }
-        .stats { display: flex; gap: 8px; margin-bottom: 15px; }
-        .stat { flex: 1; background: white; padding: 10px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-bottom: 4px solid #ccc; }
-        .stat span { font-size: 20px; font-weight: bold; display: block; color: #2c3e50; }
-        .stat small { font-size: 10px; color: #7f8c8d; }
-        .stat.waiting { border-bottom-color: var(--waiting); }
-        .stat.fixing { border-bottom-color: var(--fixing); }
-        .stat.done { border-bottom-color: var(--done); }
-        .filters { display: flex; gap: 5px; margin: 10px 0; overflow-x: auto; }
-        .filters button { padding: 6px 12px; border-radius: 20px; border: none; cursor: pointer; font-size: 12px; white-space: nowrap; background: #e0e0e0; }
-        .filters button.active { background: #2c3e50; color: white; }
-        .order-card { background: white; padding: 12px; border-radius: 8px; border-right: 5px solid #ccc; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .order-card.status-waiting { border-right-color: var(--waiting); }
-        .order-card.status-fixing { border-right-color: var(--fixing); }
-        .order-card.status-done { border-right-color: var(--done); }
-        .order-card.status-archived { border-right-color: var(--archived); }
-        .order-card p { margin: 4px 0; font-size: 13px; }
-        .order-card .actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
-        .notify { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #27ae60; color: white; padding: 10px 20px; border-radius: 20px; z-index: 1000; display: none; font-weight: bold; font-size: 14px; }
-        video { width: 100%; border-radius: 10px; display: none; background: #000; }
-        .close-cam { display: none; margin-top: 8px; }
+        .app-title { text-align: center; color: #2c3e50; font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+        .app-subtitle { text-align: center; color: #7f8c8d; font-size: 13px; margin-bottom: 15px; }
+        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        .form-group { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 4px; font-weight: bold; font-size: 13px; color: #34495e; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; outline: none; }
+        input:focus, select:focus { border-color: #3498db; }
+        .btn { background: #2980b9; color: white; border: none; padding: 12px; width: 100%; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 5px; }
+        .btn-sm { padding: 5px 10px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; }
+        .row { display: flex; gap: 8px; }
+        .row .form-group { flex: 1; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 15px; }
+        .stat-box { background: white; padding: 10px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-bottom: 4px solid #bdc3c7; }
+        .stat-box.waiting { border-bottom-color: #e67e22; }
+        .stat-box.fixing { border-bottom-color: #3498db; }
+        .stat-box.done { border-bottom-color: #27ae60; }
+        .stat-num { font-size: 18px; font-weight: bold; color: #2c3e50; display: block; }
+        .stat-label { font-size: 10px; color: #7f8c8d; }
+        .search-box { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px; font-size: 14px; }
+        .filter-buttons { display: flex; gap: 5px; margin-bottom: 10px; overflow-x: auto; }
+        .filter-btn { background: #e0e0e0; border: none; padding: 6px 10px; border-radius: 15px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+        .filter-btn.active { background: #2c3e50; color: white; }
+        .order-item { background: #fff; padding: 12px; border-radius: 8px; border-right: 5px solid #bdc3c7; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .status-waiting { border-right-color: #e67e22; }
+        .status-fixing { border-right-color: #3498db; }
+        .status-done { border-right-color: #27ae60; }
+        .status-archived { border-right-color: #7f8c8d; }
+        .order-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        .order-details p { font-size: 13px; margin: 3px 0; color: #555; }
+        .action-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+        .empty-message { text-align: center; color: #95a5a6; padding: 25px; }
+        .notification { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #27ae60; color: white; padding: 10px 20px; border-radius: 20px; z-index: 1000; display: none; font-weight: bold; font-size: 14px; }
+        .records-count { text-align: center; color: #7f8c8d; font-size: 12px; margin: 5px 0; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>مركز وسام للإلكترونيات</h2>
-    
-    <div id="notify" class="notify"></div>
+    <div class="app-title">مركز وسام للإلكترونيات</div>
+    <div class="app-subtitle">نظام إدارة الصيانة</div>
 
-    <!-- الكاميرا -->
-    <video id="video" playsinline autoplay></video>
-    <button class="btn btn-red close-cam" id="closeCam" onclick="stopScanner()">إغلاق الكاميرا</button>
+    <div id="notification" class="notification"></div>
 
-    <!-- نموذج الإدخال -->
+    <!-- نموذج الإضافة -->
     <div class="card">
-        <input type="hidden" id="editId">
-        <div class="flex">
-            <input type="text" id="serial" placeholder="الباركود / السيريال" required>
-            <button class="btn btn-blue" style="width:50px;" onclick="startScanner()">📷</button>
-        </div>
-        <div class="flex">
-            <input type="text" id="custName" placeholder="اسم الزبون" required>
-            <input type="tel" id="phone" placeholder="رقم الهاتف" required>
-        </div>
-        <input type="text" id="device" placeholder="نوع الجهاز" required>
-        <textarea id="fault" placeholder="وصف العطل" rows="2"></textarea>
-        <div class="flex">
-            <input type="date" id="receiveDate">
-            <select id="status"><option value="waiting">🟠 انتظار</option><option value="fixing">🔵 صيانة</option><option value="done">🟢 جاهز</option></select>
-        </div>
-        <div class="flex">
-            <input type="number" id="parts" placeholder="تكلفة القطع" value="0" step="0.01" oninput="calcTotals()">
-            <input type="number" id="labor" placeholder="أجر الصيانة" value="0" step="0.01" oninput="calcTotals()">
-        </div>
-        <div class="total-box total-cost" id="costBox">التكلفة: 0.00 ل.س</div>
-        <div class="flex">
-            <input type="number" id="paid" placeholder="المبلغ المدفوع" value="0" step="0.01" oninput="calcTotals()">
-            <select id="paidStatus"><option value="false">❌ غير مدفوع</option><option value="true">✅ مدفوع</option></select>
-        </div>
-        <select id="received"><option value="false">❌ لم يستلم الزبون</option><option value="true">✅ استلم الزبون</option></select>
-        <div class="total-box total-profit" id="profitBox" style="color:#e65100;">الربح: 0.00 ل.س</div>
-        <button class="btn btn-green" id="saveBtn" onclick="saveOrder()">➕ تسجيل الجهاز</button>
-        <button class="btn btn-gray" id="cancelBtn" style="display:none;" onclick="cancelEdit()">إلغاء التعديل</button>
+        <form id="maintenanceForm" autocomplete="off">
+            <input type="hidden" id="editId">
+            <div class="form-group">
+                <label>الرقم التسلسلي:</label>
+                <input type="text" id="serialNumber" required placeholder="أدخل رقم السيريال">
+            </div>
+            <div class="row">
+                <div class="form-group"><label>اسم الزبون:</label><input type="text" id="customerName" required placeholder="اسم الزبون"></div>
+                <div class="form-group"><label>رقم الهاتف:</label><input type="tel" id="customerPhone" required placeholder="رقم الهاتف"></div>
+            </div>
+            <div class="form-group"><label>نوع الجهاز:</label><input type="text" id="deviceType" required placeholder="مثال: شاشة سامسونج"></div>
+            <div class="form-group"><label>وصف العطل:</label><textarea id="deviceFault" rows="2" placeholder="تشخيص العطل..."></textarea></div>
+            <div class="row">
+                <div class="form-group"><label>تاريخ الاستلام:</label><input type="date" id="receiveDate" required></div>
+                <div class="form-group"><label>التكلفة:</label><input type="number" id="cost" placeholder="0.00" step="0.01"></div>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>الحالة:</label>
+                    <select id="statusSelect">
+                        <option value="waiting">🟠 قيد الانتظار</option>
+                        <option value="fixing">🔵 في الصيانة</option>
+                        <option value="done">🟢 جاهز للتسليم</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>استلام الزبون:</label>
+                    <select id="customerReceived">
+                        <option value="false">❌ لا</option>
+                        <option value="true">✅ نعم</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn" id="submitBtn">➕ تسجيل الجهاز</button>
+            <button type="button" id="cancelEditBtn" class="btn" style="display:none; background:#95a5a6;" onclick="cancelEdit()">إلغاء التعديل</button>
+        </form>
     </div>
 
     <!-- إحصائيات -->
-    <div class="stats">
-        <div class="stat waiting"><span id="cWaiting">0</span><small>انتظار</small></div>
-        <div class="stat fixing"><span id="cFixing">0</span><small>صيانة</small></div>
-        <div class="stat done"><span id="cDone">0</span><small>جاهز</small></div>
+    <div class="stats-grid">
+        <div class="stat-box waiting"><span class="stat-num" id="countWaiting">0</span><span class="stat-label">قيد الانتظار</span></div>
+        <div class="stat-box fixing"><span class="stat-num" id="countFixing">0</span><span class="stat-label">في الصيانة</span></div>
+        <div class="stat-box done"><span class="stat-num" id="countDone">0</span><span class="stat-label">جاهز للتسليم</span></div>
     </div>
 
     <!-- بحث وفلترة -->
-    <input type="text" id="search" placeholder="🔍 بحث بالباركود، الاسم، الهاتف..." oninput="render()">
-    <div class="filters">
-        <button class="active" onclick="setFilter('all', this)">الكل</button>
-        <button onclick="setFilter('waiting', this)">انتظار</button>
-        <button onclick="setFilter('fixing', this)">صيانة</button>
-        <button onclick="setFilter('done', this)">جاهز</button>
-        <button onclick="setFilter('archived', this)">أرشيف</button>
+    <input type="text" id="searchBox" class="search-box" placeholder="🔍 بحث بالباركود، الاسم، الهاتف..." oninput="filterOrders()">
+    <div class="filter-buttons">
+        <button class="filter-btn active" onclick="changeFilter('all', this)">الكل</button>
+        <button class="filter-btn" onclick="changeFilter('waiting', this)">انتظار</button>
+        <button class="filter-btn" onclick="changeFilter('fixing', this)">صيانة</button>
+        <button class="filter-btn" onclick="changeFilter('done', this)">جاهز</button>
+        <button class="filter-btn" onclick="changeFilter('archived', this)">أرشيف</button>
     </div>
-    <p style="text-align:center;color:#7f8c8d;font-size:12px;">عدد السجلات: <strong id="count">0</strong></p>
 
-    <!-- قائمة السجلات -->
-    <div id="list"></div>
+    <div class="records-count">عدد السجلات: <strong id="recordsCount">0</strong></div>
+    <div id="ordersList"></div>
 </div>
 
 <script>
-    // ==================== متغيرات ====================
-    let db, allOrders = [], currentFilter = 'all', scannerStream = null, scanInterval = null;
-
-    // ==================== قاعدة البيانات ====================
-    const dbReq = indexedDB.open("WesamCenterFinal", 1);
-    dbReq.onupgradeneeded = e => { if(!e.target.result.objectStoreNames.contains("orders")) e.target.result.createObjectStore("orders",{keyPath:"id",autoIncrement:true}); };
-    dbReq.onsuccess = e => { db = e.target.result; loadOrders(); };
-    dbReq.onerror = () => notify('خطأ في قاعدة البيانات','error');
-
-    function loadOrders() {
-        if(!db) return;
-        const tx = db.transaction("orders","readonly");
-        tx.objectStore("orders").getAll().onsuccess = e => { allOrders = e.target.result || []; render(); };
-    }
-
     // ==================== إشعار ====================
-    function notify(msg, type='success') {
-        const n = document.getElementById('notify');
+    function notify(msg, type) {
+        type = type || 'success';
+        var n = document.getElementById('notification');
         n.textContent = msg;
-        n.style.background = type==='success' ? '#27ae60' : '#e74c3c';
+        n.style.background = type === 'success' ? '#27ae60' : '#e74c3c';
         n.style.display = 'block';
         clearTimeout(n._t);
-        n._t = setTimeout(() => n.style.display = 'none', 2000);
+        n._t = setTimeout(function() { n.style.display = 'none'; }, 2000);
     }
 
-    // ==================== حسابات ====================
-    function calcTotals() {
-        const parts = +document.getElementById('parts').value || 0;
-        const labor = +document.getElementById('labor').value || 0;
-        const paid = +document.getElementById('paid').value || 0;
-        const cost = parts + labor;
-        document.getElementById('costBox').textContent = `التكلفة: ${cost.toFixed(2)} ل.س`;
-        const profit = paid - cost;
-        const pb = document.getElementById('profitBox');
-        pb.textContent = `الربح: ${profit.toFixed(2)} ل.س`;
-        pb.style.color = profit >= 0 ? '#2e7d32' : '#c62828';
+    // ==================== قاعدة البيانات ====================
+    var db;
+    var allOrders = [];
+    var currentFilter = 'all';
+
+    var request = indexedDB.open("WesamSimpleDB", 1);
+    request.onupgradeneeded = function(e) {
+        if (!e.target.result.objectStoreNames.contains("orders")) {
+            e.target.result.createObjectStore("orders", { keyPath: "id", autoIncrement: true });
+        }
+    };
+    request.onsuccess = function(e) { db = e.target.result; loadOrders(); };
+    request.onerror = function() { notify('خطأ في قاعدة البيانات', 'error'); };
+
+    function loadOrders() {
+        if (!db) return;
+        var tx = db.transaction("orders", "readonly");
+        tx.objectStore("orders").getAll().onsuccess = function(e) {
+            allOrders = e.target.result || [];
+            filterOrders();
+        };
     }
 
-    // ==================== حفظ ====================
-    function saveOrder() {
-        const serial = document.getElementById('serial').value.trim();
-        const name = document.getElementById('custName').value.trim();
-        const phone = document.getElementById('phone').value.trim();
-        const device = document.getElementById('device').value.trim();
-        if(!serial || !name || !phone || !device) { notify('املأ جميع الحقول المطلوبة','error'); return; }
+    // ==================== حفظ / تعديل ====================
+    document.getElementById('maintenanceForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var serial = document.getElementById('serialNumber').value.trim();
+        var name = document.getElementById('customerName').value.trim();
+        var phone = document.getElementById('customerPhone').value.trim();
+        var device = document.getElementById('deviceType').value.trim();
+        if (!serial || !name || !phone || !device) { notify('املأ جميع الحقول المطلوبة', 'error'); return; }
 
-        const parts = +document.getElementById('parts').value || 0;
-        const labor = +document.getElementById('labor').value || 0;
-        const paid = +document.getElementById('paid').value || 0;
-        const cost = parts + labor;
-        const editId = document.getElementById('editId').value;
-
-        const order = {
-            serial, name, phone, device,
-            fault: document.getElementById('fault').value.trim(),
-            date: document.getElementById('receiveDate').value,
-            status: document.getElementById('status').value,
-            parts, labor, cost,
-            paid, profit: paid - cost,
-            paidStatus: document.getElementById('paidStatus').value === 'true',
-            received: document.getElementById('received').value === 'true',
+        var editId = document.getElementById('editId').value;
+        var order = {
+            serialNumber: serial,
+            customerName: name,
+            customerPhone: phone,
+            deviceType: device,
+            deviceFault: document.getElementById('deviceFault').value.trim(),
+            receiveDate: document.getElementById('receiveDate').value,
+            cost: parseFloat(document.getElementById('cost').value) || 0,
+            status: document.getElementById('statusSelect').value,
+            customerReceived: document.getElementById('customerReceived').value === 'true',
             createdAt: new Date().toISOString()
         };
 
-        const tx = db.transaction("orders","readwrite");
-        const store = tx.objectStore("orders");
-        if(editId) { order.id = +editId; store.put(order); }
+        var tx = db.transaction("orders", "readwrite");
+        var store = tx.objectStore("orders");
+        if (editId) { order.id = parseInt(editId); store.put(order); }
         else { store.add(order); }
-        tx.oncomplete = () => { resetForm(); loadOrders(); notify(editId?'تم التعديل ✓':'تم التسجيل ✓'); };
-        tx.onerror = () => notify('خطأ في الحفظ','error');
-    }
+        tx.oncomplete = function() { resetForm(); loadOrders(); notify(editId ? 'تم التعديل ✓' : 'تم التسجيل ✓'); };
+        tx.onerror = function() { notify('خطأ في الحفظ', 'error'); };
+    });
 
     function resetForm() {
-        document.getElementById('serial').value = '';
-        document.getElementById('custName').value = '';
-        document.getElementById('phone').value = '';
-        document.getElementById('device').value = '';
-        document.getElementById('fault').value = '';
-        document.getElementById('parts').value = '0';
-        document.getElementById('labor').value = '0';
-        document.getElementById('paid').value = '0';
+        document.getElementById('maintenanceForm').reset();
         document.getElementById('editId').value = '';
-        document.getElementById('saveBtn').textContent = '➕ تسجيل الجهاز';
-        document.getElementById('cancelBtn').style.display = 'none';
-        document.getElementById('receiveDate').value = new Date().toISOString().substring(0,10);
-        document.getElementById('status').value = 'waiting';
-        document.getElementById('costBox').textContent = 'التكلفة: 0.00 ل.س';
-        document.getElementById('profitBox').textContent = 'الربح: 0.00 ل.س';
-        document.getElementById('profitBox').style.color = '#e65100';
+        document.getElementById('submitBtn').textContent = '➕ تسجيل الجهاز';
+        document.getElementById('cancelEditBtn').style.display = 'none';
+        document.getElementById('receiveDate').value = new Date().toISOString().substring(0, 10);
     }
 
     function cancelEdit() { resetForm(); }
 
     // ==================== عمليات ====================
     function updateStatus(id, status) {
-        const tx = db.transaction("orders","readwrite");
-        const store = tx.objectStore("orders");
-        store.get(id).onsuccess = e => {
-            const o = e.target.result;
-            if(o) { o.status = status; if(status==='archived') o.archivedAt = new Date().toISOString(); store.put(o); tx.oncomplete = () => { loadOrders(); notify('تم ✓'); }; }
-        };
-    }
-
-    function togglePaid(id) {
-        const tx = db.transaction("orders","readwrite");
-        const store = tx.objectStore("orders");
-        store.get(id).onsuccess = e => {
-            const o = e.target.result;
-            if(o) { o.paidStatus = !o.paidStatus; o.profit = (o.paidStatus?o.paid:0) - o.cost; store.put(o); tx.oncomplete = () => { loadOrders(); notify(o.paidStatus?'تم تأكيد الدفع ✓':'تم إلغاء الدفع'); }; }
+        if (!db) return;
+        var tx = db.transaction("orders", "readwrite");
+        var store = tx.objectStore("orders");
+        var req = store.get(id);
+        req.onsuccess = function() {
+            var o = req.result;
+            if (o) { o.status = status; if (status === 'archived') o.archivedAt = new Date().toISOString(); store.put(o); tx.oncomplete = function() { loadOrders(); notify('تم ✓'); }; }
         };
     }
 
     function toggleReceived(id) {
-        const tx = db.transaction("orders","readwrite");
-        const store = tx.objectStore("orders");
-        store.get(id).onsuccess = e => {
-            const o = e.target.result;
-            if(o) { o.received = !o.received; store.put(o); tx.oncomplete = () => { loadOrders(); notify(o.received?'تم استلام الزبون ✓':'لم يستلم بعد'); }; }
+        if (!db) return;
+        var tx = db.transaction("orders", "readwrite");
+        var store = tx.objectStore("orders");
+        var req = store.get(id);
+        req.onsuccess = function() {
+            var o = req.result;
+            if (o) { o.customerReceived = !o.customerReceived; store.put(o); tx.oncomplete = function() { loadOrders(); notify(o.customerReceived ? 'تم استلام الزبون ✓' : 'لم يستلم بعد'); }; }
         };
     }
 
     function deleteOrder(id) {
-        if(!confirm('متأكد من الحذف؟')) return;
-        db.transaction("orders","readwrite").objectStore("orders").delete(id).onsuccess = () => { loadOrders(); notify('تم الحذف ✓'); };
+        if (!confirm('متأكد من حذف هذا الجهاز؟')) return;
+        if (!db) return;
+        var tx = db.transaction("orders", "readwrite");
+        tx.objectStore("orders").delete(id);
+        tx.oncomplete = function() { loadOrders(); notify('تم الحذف ✓'); };
     }
 
     function editOrder(id) {
-        db.transaction("orders","readonly").objectStore("orders").get(id).onsuccess = e => {
-            const o = e.target.result;
-            if(!o) return;
+        if (!db) return;
+        var tx = db.transaction("orders", "readonly");
+        var req = tx.objectStore("orders").get(id);
+        req.onsuccess = function() {
+            var o = req.result;
+            if (!o) return;
             document.getElementById('editId').value = o.id;
-            document.getElementById('serial').value = o.serial;
-            document.getElementById('custName').value = o.name;
-            document.getElementById('phone').value = o.phone;
-            document.getElementById('device').value = o.device;
-            document.getElementById('fault').value = o.fault || '';
-            document.getElementById('receiveDate').value = o.date;
-            document.getElementById('status').value = o.status;
-            document.getElementById('parts').value = o.parts || 0;
-            document.getElementById('labor').value = o.labor || 0;
-            document.getElementById('paid').value = o.paid || 0;
-            document.getElementById('paidStatus').value = o.paidStatus ? 'true' : 'false';
-            document.getElementById('received').value = o.received ? 'true' : 'false';
-            calcTotals();
-            document.getElementById('saveBtn').textContent = '💾 حفظ التعديلات';
-            document.getElementById('cancelBtn').style.display = 'block';
-            window.scrollTo(0,0);
+            document.getElementById('serialNumber').value = o.serialNumber;
+            document.getElementById('customerName').value = o.customerName;
+            document.getElementById('customerPhone').value = o.customerPhone;
+            document.getElementById('deviceType').value = o.deviceType;
+            document.getElementById('deviceFault').value = o.deviceFault || '';
+            document.getElementById('receiveDate').value = o.receiveDate;
+            document.getElementById('cost').value = o.cost || 0;
+            document.getElementById('statusSelect').value = o.status;
+            document.getElementById('customerReceived').value = o.customerReceived ? 'true' : 'false';
+            document.getElementById('submitBtn').textContent = '💾 حفظ التعديلات';
+            document.getElementById('cancelEditBtn').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         };
     }
 
     // ==================== عرض ====================
-    function render() {
-        const search = document.getElementById('search').value.toLowerCase().trim();
-        let filtered = allOrders.filter(o => {
-            if(currentFilter!=='all' && o.status!==currentFilter) return false;
-            if(search) { const s=search; if(![o.serial,o.name,o.phone,o.device].some(v=>v&&v.toLowerCase().includes(s))) return false; }
+    function filterOrders() {
+        var search = document.getElementById('searchBox').value.toLowerCase().trim();
+        var filtered = allOrders.filter(function(o) {
+            if (currentFilter !== 'all' && o.status !== currentFilter) return false;
+            if (search) {
+                var s = search;
+                var found = false;
+                if (o.serialNumber && o.serialNumber.toLowerCase().indexOf(s) !== -1) found = true;
+                if (o.customerName && o.customerName.toLowerCase().indexOf(s) !== -1) found = true;
+                if (o.customerPhone && o.customerPhone.toLowerCase().indexOf(s) !== -1) found = true;
+                if (o.deviceType && o.deviceType.toLowerCase().indexOf(s) !== -1) found = true;
+                if (!found) return false;
+            }
             return true;
         });
-        filtered.sort((a,b) => b.id - a.id);
-        document.getElementById('count').textContent = filtered.length;
+        filtered.sort(function(a, b) { return b.id - a.id; });
+        document.getElementById('recordsCount').textContent = filtered.length;
 
-        const list = document.getElementById('list');
-        if(!filtered.length) { list.innerHTML = '<p style="text-align:center;color:#95a5a6;padding:20px;">🚫 لا توجد سجلات</p>'; }
-        else {
-            list.innerHTML = filtered.map(o => {
-                const sc = 'status-' + o.status;
-                const st = o.status==='waiting'?'🟠 انتظار':o.status==='fixing'?'🔵 صيانة':o.status==='done'?'🟢 جاهز':'⚫ أرشيف';
-                const arch = o.status==='archived';
-                const pc = (o.profit||0)>=0?'#2e7d32':'#c62828';
-                const received = o.received?'✅ استلم':'❌ لم يستلم';
-                let actions = '';
-                if(!arch) {
-                    actions = `<select onchange="updateStatus(${o.id},this.value)" style="padding:4px;font-size:11px;border-radius:4px;"><option value="">حالة</option><option value="waiting">انتظار</option><option value="fixing">صيانة</option><option value="done">جاهز</option></select>
-                    <button class="btn-sm" style="background:#27ae60;" onclick="updateStatus(${o.id},'archived')">📤 تسليم</button>
-                    <button class="btn-sm" style="background:#8e44ad;" onclick="togglePaid(${o.id})">💳 ${o.paidStatus?'ألغي':'تأكيد'}</button>
-                    <button class="btn-sm" style="background:#3498db;" onclick="toggleReceived(${o.id})">📋 ${o.received?'ألغي':'استلم'}</button>
-                    <button class="btn-sm" style="background:#f39c12;" onclick="editOrder(${o.id})">✏️</button>
-                    <button class="btn-sm" style="background:#e74c3c;" onclick="deleteOrder(${o.id})">🗑️</button>`;
+        var container = document.getElementById('ordersList');
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="empty-message">🚫 لا توجد سجلات</div>';
+        } else {
+            var html = '';
+            filtered.forEach(function(o) {
+                var sc = 'status-' + o.status;
+                var st = o.status === 'waiting' ? '🟠 انتظار' : o.status === 'fixing' ? '🔵 صيانة' : o.status === 'done' ? '🟢 جاهز' : '⚫ أرشيف';
+                var arch = o.status === 'archived';
+                var received = o.customerReceived ? '✅ استلم' : '❌ لم يستلم';
+                var actions = '';
+                if (!arch) {
+                    actions = '<select onchange="updateStatus(' + o.id + ', this.value)" style="padding:4px;font-size:11px;border-radius:4px;"><option value="">حالة</option><option value="waiting">انتظار</option><option value="fixing">صيانة</option><option value="done">جاهز</option></select>' +
+                        '<button class="btn-sm" style="background:#27ae60;" onclick="updateStatus(' + o.id + ', \'archived\')">📤 تسليم</button>' +
+                        '<button class="btn-sm" style="background:#3498db;" onclick="toggleReceived(' + o.id + ')">📋 ' + (o.customerReceived ? 'ألغي' : 'استلم') + '</button>' +
+                        '<button class="btn-sm" style="background:#f39c12;" onclick="editOrder(' + o.id + ')">✏️</button>' +
+                        '<button class="btn-sm" style="background:#e74c3c;" onclick="deleteOrder(' + o.id + ')">🗑️</button>';
                 } else {
-                    actions = `<button class="btn-sm" style="background:#27ae60;" onclick="updateStatus(${o.id},'done')">🔄 استعادة</button>
-                    <button class="btn-sm" style="background:#e74c3c;" onclick="deleteOrder(${o.id})">🗑️</button>`;
+                    actions = '<button class="btn-sm" style="background:#27ae60;" onclick="updateStatus(' + o.id + ', \'done\')">🔄 استعادة</button>' +
+                        '<button class="btn-sm" style="background:#e74c3c;" onclick="deleteOrder(' + o.id + ')">🗑️</button>';
                 }
-                return `<div class="order-card ${sc}">
-                    <p><strong>#${o.id} - ${o.device}</strong> | ${st}</p>
-                    <p>الباركود: ${o.serial} | 👤 ${o.name} | 📞 ${o.phone}</p>
-                    <p>العطل: ${o.fault||'-'}</p>
-                    <p>التكلفة: ${(o.cost||0).toFixed(2)} | المدفوع: ${(o.paid||0).toFixed(2)} | الربح: <span style="color:${pc};font-weight:bold;">${(o.profit||0).toFixed(2)} ل.س</span></p>
-                    <p>${o.paidStatus?'✅ مدفوع':'❌ غير مدفوع'} | ${received} | 📅 ${o.date}</p>
-                    <div class="actions">${actions}</div>
-                </div>`;
-            }).join('');
+                html += '<div class="order-item ' + sc + '">' +
+                    '<div class="order-header"><span>#' + o.id + ' - ' + o.deviceType + '</span><span>' + st + '</span></div>' +
+                    '<div class="order-details">' +
+                    '<p><strong>السيريال:</strong> ' + o.serialNumber + '</p>' +
+                    '<p><strong>الزبون:</strong> ' + o.customerName + ' | 📞 ' + o.customerPhone + '</p>' +
+                    '<p><strong>العطل:</strong> ' + (o.deviceFault || '-') + '</p>' +
+                    '<p><strong>التكلفة:</strong> ' + (o.cost || 0).toFixed(2) + ' ل.س | <strong>استلام:</strong> ' + received + ' | 📅 ' + o.receiveDate + '</p>' +
+                    '</div><div class="action-bar">' + actions + '</div></div>';
+            });
+            container.innerHTML = html;
         }
 
-        const active = allOrders.filter(o => o.status!=='archived');
-        document.getElementById('cWaiting').textContent = active.filter(o=>o.status==='waiting').length;
-        document.getElementById('cFixing').textContent = active.filter(o=>o.status==='fixing').length;
-        document.getElementById('cDone').textContent = active.filter(o=>o.status==='done').length;
+        var active = allOrders.filter(function(o) { return o.status !== 'archived'; });
+        document.getElementById('countWaiting').textContent = active.filter(function(o) { return o.status === 'waiting'; }).length;
+        document.getElementById('countFixing').textContent = active.filter(function(o) { return o.status === 'fixing'; }).length;
+        document.getElementById('countDone').textContent = active.filter(function(o) { return o.status === 'done'; }).length;
     }
 
-    function setFilter(f, btn) {
-        currentFilter = f;
-        document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));
-        btn.classList.add('active');
-        render();
-    }
-
-    // ==================== كاميرا ====================
-    async function startScanner() {
-        const video = document.getElementById('video');
-        const closeBtn = document.getElementById('closeCam');
-        video.style.display = 'block';
-        closeBtn.style.display = 'block';
-
-        try {
-            scannerStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
-            video.srcObject = scannerStream;
-            video.play();
-            notify('الكاميرا جاهزة 📷');
-
-            if('BarcodeDetector' in window) {
-                const detector = new BarcodeDetector({formats:['qr_code','ean_13','ean_8','code_128','code_39']});
-                scanInterval = setInterval(async () => {
-                    if(video.readyState >= 2) {
-                        try {
-                            const barcodes = await detector.detect(video);
-                            if(barcodes.length > 0) {
-                                document.getElementById('serial').value = barcodes[0].rawValue;
-                                stopScanner();
-                                notify('تم المسح ✓');
-                            }
-                        } catch(e) {}
-                    }
-                }, 500);
-            } else {
-                notify('أدخل الباركود يدوياً','error');
-            }
-        } catch(e) {
-            notify('تعذر الوصول للكاميرا','error');
-            stopScanner();
-        }
-    }
-
-    function stopScanner() {
-        document.getElementById('video').style.display = 'none';
-        document.getElementById('closeCam').style.display = 'none';
-        if(scanInterval) { clearInterval(scanInterval); scanInterval = null; }
-        if(scannerStream) { scannerStream.getTracks().forEach(t=>t.stop()); scannerStream = null; }
+    function changeFilter(filter, btn) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(function(b) { b.className = 'filter-btn'; });
+        btn.className = 'filter-btn active';
+        filterOrders();
     }
 
     // ==================== بدء ====================
-    document.g
+    window.onload = function() {
+        document.getElementById('receiveDate').value = new Date().toISOString().substring(0, 10);
+    };
+</script>
+
+</body>
+</html>
