@@ -880,3 +880,178 @@ function quickAddToCart(id) {
     addPartToCart(id);
     switchTab('sales');
     }
+// ============================================================
+// 10. المبيعات
+// ============================================================
+function loadSalesTab() {
+    var container = document.getElementById('t-sales');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-cart-shopping"></i> فاتورة</h3>
+            <input type="text" id="salesSearchPart" placeholder="🔍 بحث عن قطعة..." oninput="searchPartsForSale()">
+            <div id="partsSearchResults" style="max-height:150px;overflow-y:auto"></div>
+            <div id="cartItems"><p class="empty-state">🛒 السلة فارغة</p></div>
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px">
+                <span>الإجمالي: </span><span id="cartTotal" style="font-weight:700;font-size:18px">0</span> ل.س
+            </div>
+            <div class="flex flex-wrap mt-8">
+                <button class="btn btn-success flex-1" onclick="completeSale('cash')">💵 نقدي</button>
+                <button class="btn btn-warning flex-1" onclick="completeSale('debt')">📋 آجل</button>
+                <button class="btn btn-danger btn-sm" onclick="clearCart()"><i class="fa-solid fa-trash"></i></button>
+                <button class="btn" style="background:#25D366;color:#FFF" onclick="shareWhatsApp()"><i class="fa-brands fa-whatsapp"></i></button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>📋 آخر المبيعات</h3>
+            <div id="recentSales"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    updateCartDisplay();
+    loadRecentSales();
+}
+
+function searchPartsForSale() {
+    var input = document.getElementById('salesSearchPart');
+    var container = document.getElementById('partsSearchResults');
+    if (!input || !container) return;
+
+    var query = input.value.toLowerCase().trim();
+    if (query.length < 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    getAllFromStore('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if ((p.name && p.name.toLowerCase().indexOf(query) !== -1) ||
+                (p.barcode && p.barcode.toLowerCase().indexOf(query) !== -1)) {
+                results.push(p);
+            }
+        }
+
+        if (results.length === 0) {
+            container.innerHTML = '<p class="empty-state">❌ لا توجد نتائج</p>';
+            return;
+        }
+
+        var html = '';
+        var maxResults = Math.min(results.length, 8);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            var inCart = false;
+            for (var k = 0; k < currentCart.length; k++) {
+                if (currentCart[k].partId === p.id) { inCart = true; break; }
+            }
+            var stockLabel = p.quantity <= 0 ? ' (نفذ)' : p.quantity <= 5 ? ' (منخفض)' : '';
+            html += `
+                <div style="background:#E8F5E9;padding:8px;cursor:pointer;border-radius:6px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" 
+                     onclick="addPartToCart(${p.id})">
+                    <span>${p.name} ${stockLabel}</span>
+                    <span style="font-weight:700">${p.sellPrice} ل.س</span>
+                    ${inCart ? '<span class="badge badge-info">' + currentCart.find(function(c) { return c.partId === p.id; }).quantity + '</span>' : ''}
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error searching parts:', error);
+    });
+}
+
+function addPartToCart(partId) {
+    getAllFromStore('parts').then(function(parts) {
+        var part = null;
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i].id === partId) {
+                part = parts[i];
+                break;
+            }
+        }
+        if (!part) {
+            showToast('❌ القطعة غير موجودة');
+            return;
+        }
+        if (part.quantity <= 0) {
+            showToast('⚠️ القطعة نفذت من المخزن');
+            return;
+        }
+
+        var existing = null;
+        for (var j = 0; j < currentCart.length; j++) {
+            if (currentCart[j].partId === partId) {
+                existing = currentCart[j];
+                break;
+            }
+        }
+        if (existing) {
+            if (existing.quantity >= part.quantity) {
+                showToast('⚠️ الكمية المطلوبة غير متوفرة');
+                return;
+            }
+            existing.quantity++;
+        } else {
+            currentCart.push({ partId: part.id, name: part.name, price: part.sellPrice, quantity: 1 });
+        }
+        updateCartDisplay();
+        showToast('✅ تم إضافة ' + part.name);
+        document.getElementById('salesSearchPart').value = '';
+        document.getElementById('partsSearchResults').innerHTML = '';
+    }).catch(function(error) {
+        console.error('Error adding to cart:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function updateCartDisplay() {
+    var container = document.getElementById('cartItems');
+    var totalEl = document.getElementById('cartTotal');
+    if (!container) return;
+
+    if (currentCart.length === 0) {
+        container.innerHTML = '<p class="empty-state">🛒 السلة فارغة</p>';
+        if (totalEl) totalEl.textContent = '0';
+        return;
+    }
+
+    var total = 0;
+    var html = '';
+    for (var i = 0; i < currentCart.length; i++) {
+        var item = currentCart[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        html += `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #EEE">
+                <div>
+                    <strong>${item.name}</strong>
+                    <span class="text-muted"> ×${item.quantity}</span>
+                </div>
+                <div>
+                    <span>${subtotal} ل.س</span>
+                    <button class="btn btn-sm btn-danger" onclick="removeCartItem(${i})" style="margin-right:6px">✕</button>
+                </div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    if (totalEl) totalEl.textContent = total;
+}
+
+function removeCartItem(index) {
+    if (index >= 0 && index < currentCart.length) {
+        currentCart.splice(index, 1);
+        updateCartDisplay();
+    }
+}
+
+function clearCart() {
+    if (currentCart.length === 0) return;
+    if (confirm('هل تريد إفراغ السلة؟')) {
+        currentCart = [];
+        updateCartDisplay();
+        showToast('🗑️ تم إفراغ السلة');
+    }
+}
