@@ -1,1 +1,332 @@
 
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#2196F3">
+    <title>مركز وسام للإلكترونيات - WissamFinalV17</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Tajawal','Arial',sans-serif;background:#E8ECF1;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:10px}
+        .phone{width:420px;max-width:100%;height:90vh;max-height:800px;background:#F5F7FA;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,0.2);display:flex;flex-direction:column;overflow:hidden;position:relative}
+        #loginScreen{position:absolute;top:0;left:0;width:100%;height:100%;background:#F5F7FA;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:100;border-radius:24px;padding:20px}
+        #loginScreen.hidden{display:none}
+        #loginScreen .logo{font-size:60px;color:#2196F3;margin-bottom:15px}
+        #loginScreen h2{font-size:22px;color:#212121;margin-bottom:25px;text-align:center}
+        #loginScreen input{width:250px;padding:12px;border:2px solid #E0E0E0;border-radius:10px;font-size:20px;text-align:center;font-family:'Tajawal',sans-serif;letter-spacing:5px;margin-bottom:15px}
+        #loginScreen input:focus{outline:none;border-color:#2196F3}
+        #loginScreen .login-btn{width:250px;padding:12px;background:#2196F3;color:#FFF;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;font-family:'Tajawal',sans-serif}
+        .header{background:#2196F3;color:#FFF;padding:14px 16px;display:none;justify-content:space-between;align-items:center;font-size:18px;font-weight:700}
+        .header button{background:rgba(255,255,255,0.25);border:none;color:#FFF;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:15px}
+        .content{flex:1;overflow-y:auto;padding:12px;display:none;overscroll-behavior:contain}
+        .tab{display:none}
+        .tab.active{display:block}
+        .card{background:#FFF;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+        .card h3{font-size:16px;color:#212121;margin-bottom:8px}
+        .card h3 i{color:#2196F3;margin-left:6px}
+        .tabs{background:#FFF;display:none;overflow-x:auto;padding:6px 2px;border-top:1px solid #E0E0E0}
+        .tabs::-webkit-scrollbar{display:none}
+        .tabs button{flex:0 0 auto;min-width:44px;padding:5px 3px;border:none;background:transparent;color:#666;font-family:'Tajawal',sans-serif;font-size:8px;cursor:pointer;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:2px}
+        .tabs button i{font-size:14px}
+        .tabs button.active{color:#2196F3;background:#E3F2FD;font-weight:700}
+        .btn{padding:8px 12px;border:none;border-radius:8px;cursor:pointer;font-family:'Tajawal',sans-serif;font-weight:600;font-size:12px;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s}
+        .btn:active{transform:scale(0.95)}
+        .btn-primary{background:#2196F3;color:#FFF}
+        .btn-sm{padding:5px 8px;font-size:10px}
+        .btn-danger{background:#F44336;color:#FFF}
+        .btn-success{background:#4CAF50;color:#FFF}
+        .btn-warning{background:#FF9800;color:#FFF}
+        .btn-purple{background:#9C27B0;color:#FFF}
+        input,select,textarea{width:100%;padding:10px;border:1px solid #E0E0E0;border-radius:8px;font-family:'Tajawal',sans-serif;font-size:14px;margin-bottom:8px;background:#FFF;transition:border-color 0.2s}
+        input:focus,select:focus,textarea:focus{outline:none;border-color:#2196F3;box-shadow:0 0 0 3px rgba(33,150,243,0.1)}
+        #toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#FFF;padding:12px 24px;border-radius:25px;font-size:14px;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;font-family:'Tajawal',sans-serif;max-width:90%}
+        #toast.show{opacity:1}
+        .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:200;display:flex;justify-content:center;align-items:center;opacity:0;visibility:hidden;transition:all 0.3s}
+        .modal-overlay.show{opacity:1;visibility:visible}
+        .modal{background:#FFF;border-radius:16px;padding:20px;width:90%;max-width:380px;max-height:80vh;overflow-y:auto}
+        .modal .close-btn{float:left;background:none;border:none;font-size:24px;cursor:pointer;color:#999}
+        body.theme-green .header{background:#4CAF50}
+        body.theme-green #loginScreen .logo,body.theme-green .card h3 i,body.theme-green .tabs button.active{color:#4CAF50}
+        body.theme-green .btn-primary{background:#4CAF50}
+        body.theme-purple .header{background:#9C27B0}
+        body.theme-purple #loginScreen .logo,body.theme-purple .card h3 i,body.theme-purple .tabs button.active{color:#9C27B0}
+        body.theme-purple .btn-primary{background:#9C27B0}
+        .barcode-font{font-family:'Libre Barcode 39','Courier New',monospace;font-size:42px;letter-spacing:0;line-height:1.2;text-align:center;direction:ltr}
+        #scannerContainer{position:relative;width:100%;max-width:350px;margin:0 auto 10px;border-radius:12px;overflow:hidden;border:3px solid #2196F3;background:#000;min-height:200px}
+        #scannerContainer video{width:100%;height:auto;display:block;min-height:200px;object-fit:cover}
+        .scan-line{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:80%;height:2px;background:rgba(255,0,0,0.8);box-shadow:0 0 8px rgba(255,0,0,0.6);animation:scanMove 2s ease-in-out infinite}
+        @keyframes scanMove{0%,100%{top:20%}50%{top:80%}}
+        .empty-state{color:#999;text-align:center;padding:20px}
+        .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+        .badge-success{background:#E8F5E9;color:#2E7D32}
+        .badge-danger{background:#FFEBEE;color:#C62828}
+        .badge-warning{background:#FFF3E0;color:#E65100}
+        .badge-info{background:#E3F2FD;color:#0D47A1}
+        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+        .mt-8{margin-top:8px}
+        .mb-8{margin-bottom:8px}
+        .flex{display:flex;gap:8px;align-items:center}
+        .flex-wrap{flex-wrap:wrap}
+        .flex-1{flex:1}
+        .text-center{text-align:center}
+        .text-muted{color:#999;font-size:12px}
+        .border-top{border-top:1px solid #E0E0E0;padding-top:10px}
+        .stat-box{background:#F5F5F5;padding:12px;border-radius:8px;text-align:center}
+        .stat-box .number{font-size:24px;font-weight:700}
+        .stat-box .label{font-size:11px;color:#666}
+        .camera-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;background:#1a1a2e;color:#FFF;border-radius:8px;min-height:200px}
+        .camera-placeholder i{font-size:48px;color:#FF9800;margin-bottom:12px}
+        .camera-placeholder .status{font-size:14px;color:#aaa}
+        .report-table{width:100%;font-size:12px;border-collapse:collapse}
+        .report-table th{background:#F5F5F5;padding:6px;text-align:right;border-bottom:2px solid #E0E0E0}
+        .report-table td{padding:6px;border-bottom:1px solid #EEE}
+        .report-table tr:hover{background:#F9F9F9}
+    </style>
+</head>
+<body>
+<div class="phone">
+    <!-- شاشة تسجيل الدخول -->
+    <div id="loginScreen">
+        <div class="logo"><i class="fa-solid fa-mobile-screen-button"></i></div>
+        <h2>مركز وسام<br>للإلكترونيات</h2>
+        <input type="password" id="passInput" placeholder="كلمة المرور" maxlength="8" autofocus>
+        <button class="login-btn" onclick="doLogin()"><i class="fa-solid fa-lock-open"></i> دخول</button>
+        <div style="margin-top:20px;font-size:11px;color:#999">WissamFinalV17</div>
+        <div id="loginError" style="color:#F44336;font-size:12px;margin-top:8px;height:20px"></div>
+    </div>
+
+    <!-- الرأس -->
+    <div class="header" id="header">
+        <span id="headerTitle"><i class="fa-solid fa-microchip"></i> مركز وسام</span>
+        <div>
+            <button onclick="changeTheme()" title="تغيير الثيم"><i class="fa-solid fa-palette"></i></button>
+            <button onclick="showQuickExpense()" title="إضافة مصروف"><i class="fa-solid fa-money-bill"></i></button>
+            <button onclick="logout()" title="تسجيل خروج"><i class="fa-solid fa-sign-out-alt"></i></button>
+        </div>
+    </div>
+
+    <!-- المحتوى -->
+    <div class="content" id="content">
+        <div class="tab active" id="t-home">
+            <div class="card"><h3><i class="fa-solid fa-gauge-high"></i> لوحة التحكم</h3><div id="dashboardStats"><p class="empty-state">⏳ جاري التحميل...</p></div></div>
+            <div class="card" id="quickActions"><h3><i class="fa-solid fa-bolt"></i> إجراءات سريعة</h3>
+                <div class="grid-2">
+                    <button class="btn btn-primary" onclick="switchTab('store')"><i class="fa-solid fa-boxes-stacked"></i> المخزن</button>
+                    <button class="btn btn-success" onclick="switchTab('sales')"><i class="fa-solid fa-cart-shopping"></i> مبيعات</button>
+                    <button class="btn btn-warning" onclick="switchTab('repair')"><i class="fa-solid fa-screwdriver-wrench"></i> صيانة</button>
+                    <button class="btn btn-purple" onclick="switchTab('barcode')"><i class="fa-solid fa-barcode"></i> باركود</button>
+                </div>
+            </div>
+        </div>
+        <div class="tab" id="t-store"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-sales"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-returns"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-debts"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-repair"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-money"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-expenses"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-reports"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-barcode"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        <div class="tab" id="t-scan"><p class="empty-state">⏳ جاري التحميل...</p></div>
+    </div>
+
+    <!-- التبويبات -->
+    <div class="tabs" id="tabs">
+        <button class="active" data-tab="home"><i class="fa-solid fa-house"></i><span>الرئيسية</span></button>
+        <button data-tab="store"><i class="fa-solid fa-boxes-stacked"></i><span>المخزن</span></button>
+        <button data-tab="sales"><i class="fa-solid fa-cart-shopping"></i><span>مبيعات</span></button>
+        <button data-tab="returns"><i class="fa-solid fa-rotate-left"></i><span>مرتجعات</span></button>
+        <button data-tab="debts"><i class="fa-solid fa-hand-holding-dollar"></i><span>ديون</span></button>
+        <button data-tab="repair"><i class="fa-solid fa-screwdriver-wrench"></i><span>صيانة</span></button>
+        <button data-tab="money"><i class="fa-solid fa-money-bill-wave"></i><span>مال</span></button>
+        <button data-tab="expenses"><i class="fa-solid fa-receipt"></i><span>مصاريف</span></button>
+        <button data-tab="reports"><i class="fa-solid fa-chart-bar"></i><span>تقارير</span></button>
+        <button data-tab="barcode"><i class="fa-solid fa-barcode"></i><span>باركود</span></button>
+        <button data-tab="scan"><i class="fa-solid fa-camera"></i><span>مسح</span></button>
+    </div>
+</div>
+
+<!-- الإشعارات -->
+<div id="toast"></div>
+
+<!-- النوافذ المنبثقة -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modalContent">
+        <button class="close-btn" onclick="closeModal()">✕</button>
+        <div id="modalBody"></div>
+    </div>
+</div>
+
+<script>
+  // ============================================================
+// 1. المتغيرات العامة والإعدادات
+// ============================================================
+const DB_NAME = 'WissamCenterDB';
+const DB_VERSION = 7;
+const ADMIN_PASS = '1234';
+const EMPLOYEE_PASS = '1111';
+const MAX_LOGIN_ATTEMPTS = 5;
+
+let db = null;
+let currentUser = null;
+let loginAttempts = 0;
+let currentCart = [];
+let scanStream = null;
+let scanRunning = false;
+let temporaryData = { repairParts: [] };
+let themeIndex = 0;
+const themes = ['blue', 'green', 'purple'];
+let dbReadyPromise = null;
+let scannerActive = false;
+let scanFrameId = null;
+let scannedBarcodeValue = '';
+
+// عناصر DOM
+var loginScreen = document.getElementById('loginScreen');
+var passInput = document.getElementById('passInput');
+var loginError = document.getElementById('loginError');
+var header = document.getElementById('header');
+var content = document.getElementById('content');
+var tabs = document.getElementById('tabs');
+var toast = document.getElementById('toast');
+
+// ============================================================
+// 2. دوال مساعدة للـ IndexedDB
+// ============================================================
+function dbReady() {
+    if (dbReadyPromise) return dbReadyPromise;
+    
+    dbReadyPromise = new Promise(function(resolve, reject) {
+        if (db) {
+            resolve(db);
+            return;
+        }
+        
+        try {
+            var request = indexedDB.open(DB_NAME, DB_VERSION);
+            
+            request.onerror = function(event) {
+                console.error('IndexedDB error:', event.target.error);
+                reject(event.target.error);
+            };
+            
+            request.onsuccess = function(event) {
+                db = event.target.result;
+                console.log('✅ IndexedDB opened successfully');
+                resolve(db);
+            };
+            
+            request.onupgradeneeded = function(event) {
+                var d = event.target.result;
+                console.log('🔄 Upgrading database...');
+                
+                var stores = ['users', 'parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'notifications', 'settings', 'prepared_barcodes', 'cash_flow'];
+                stores.forEach(function(name) {
+                    if (!d.objectStoreNames.contains(name)) {
+                        var store = d.createObjectStore(name, { keyPath: 'id', autoIncrement: true });
+                        if (name === 'users') store.createIndex('username', 'username', { unique: true });
+                        if (name === 'parts') store.createIndex('barcode', 'barcode', { unique: true });
+                        if (name === 'sales') store.createIndex('date', 'date', { unique: false });
+                        if (name === 'debts') store.createIndex('status', 'status', { unique: false });
+                        if (name === 'expenses') store.createIndex('date', 'date', { unique: false });
+                        if (name === 'cash_flow') store.createIndex('date', 'date', { unique: false });
+                        if (name === 'prepared_barcodes') {
+                            store.createIndex('barcode', 'barcode', { unique: true });
+                            store.createIndex('type', 'type', { unique: false });
+                            store.createIndex('used', 'used', { unique: false });
+                        }
+                        console.log('✅ Created store: ' + name);
+                    }
+                });
+            };
+        } catch (error) {
+            console.error('Error opening database:', error);
+            reject(error);
+        }
+    });
+    
+    return dbReadyPromise;
+}
+
+function getAllFromStore(storeName) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readonly');
+                var request = tx.objectStore(storeName).getAll();
+                request.onsuccess = function() { resolve(request.result || []); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function addToStore(storeName, data) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).add(data);
+                request.onsuccess = function() { resolve(request.result); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function updateInStore(storeName, data) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).put(data);
+                request.onsuccess = function() { resolve(request.result); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function deleteFromStore(storeName, id) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).delete(id);
+                request.onsuccess = function() { resolve(); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function clearStore(storeName) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).clear();
+                request.onsuccess = function() { resolve(); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+                }
+
+  
