@@ -1238,7 +1238,7 @@ function exportExpensesToCSV() {
 }
 
 // ============================================================
-// 9. المرتجعات والديون (مختصرة)
+// 9. المرتجعات والديون
 // ============================================================
 function loadReturnsTab() {
     var container = document.getElementById('t-returns');
@@ -1427,7 +1427,7 @@ function payDebt(debtId) {
 }
 
 // ============================================================
-// 10. الصيانة (مع زر واتساب)
+// 10. الصيانة
 // ============================================================
 function loadRepairTab() {
     console.log('🔧 تحميل الصيانة...');
@@ -2846,7 +2846,7 @@ function importBackup(event) {
 }
 
 // ============================================================
-// 15. مسح الباركود (الكاميرا) - مختصر
+// 15. مسح الباركود (الكاميرا) مع إضافة صيانة جديدة
 // ============================================================
 function loadScanTab() {
     var container = document.getElementById('t-scan');
@@ -3001,15 +3001,22 @@ function copyScannedBarcode() {
     copyBarcode(scannedBarcodeValue);
 }
 
+// ============================================================
+// دالة البحث عن الباركود مع إضافة صيانة جديدة
+// ============================================================
 function performBarcodeSearch(barcode) {
     var container = document.getElementById('scanSearchResults');
     if (!container) return;
     container.innerHTML = '<p class="empty-state">⏳ جاري البحث...</p>';
 
     var html = '';
+    var foundInParts = false;
+    var foundInRepairs = false;
+    
     getAll('parts').then(function(parts) {
         var matchedParts = parts.filter(function(p) { return p.barcode && p.barcode.toLowerCase() === barcode.toLowerCase(); });
         if (matchedParts.length > 0) {
+            foundInParts = true;
             html += `<div style="background:#E8F5E9;padding:10px;border-radius:8px;margin-bottom:8px"><strong>📦 المخزن:</strong>`;
             for (var i = 0; i < matchedParts.length; i++) {
                 var p = matchedParts[i];
@@ -3024,11 +3031,13 @@ function performBarcodeSearch(barcode) {
     }).then(function(repairs) {
         var matchedRepairs = repairs.filter(function(r) { return r.deviceBarcode && r.deviceBarcode.toLowerCase() === barcode.toLowerCase(); });
         if (matchedRepairs.length > 0) {
+            foundInRepairs = true;
             html += `<div style="background:#FFF3E0;padding:10px;border-radius:8px;margin-bottom:8px"><strong>🔧 الصيانة:</strong>`;
             for (var i = 0; i < matchedRepairs.length; i++) {
                 var r = matchedRepairs[i];
+                var statusText = r.status === 'fixed' ? '✅ تم الإصلاح' : r.status === 'waiting' ? '⏳ قيد الانتظار' : '🔧 في الصيانة';
                 html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #FFE0B2">
-                    <span>${r.deviceType} - ${r.customerName} | ${r.total} ل.س</span>
+                    <span>${r.deviceType} - ${r.customerName} | ${r.total} ل.س | ${statusText}</span>
                     <button class="btn btn-sm btn-warning" onclick="switchTab('repair')"><i class="fa-solid fa-screwdriver-wrench"></i></button>
                 </div>`;
             }
@@ -3048,18 +3057,35 @@ function performBarcodeSearch(barcode) {
             html += '</div>';
         }
 
-        if (!html) {
+        // إذا لم يتم العثور على الباركود في أي مكان
+        if (!foundInParts && !foundInRepairs) {
             html = `
                 <div style="background:#FFEBEE;padding:15px;border-radius:8px;text-align:center">
                     <div style="font-size:24px;color:#C62828">❌</div>
                     <p style="color:#C62828;font-weight:700">لم يتم العثور على هذا الباركود</p>
                     <p class="text-muted">${barcode}</p>
-                    <button class="btn btn-sm btn-primary mt-8" onclick="showAddPartFromScan('${barcode}')">
-                        <i class="fa-solid fa-plus"></i> إضافة قطعة جديدة
+                    <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap">
+                        <button class="btn btn-sm btn-primary" onclick="showAddPartFromScan('${barcode}')">
+                            <i class="fa-solid fa-box"></i> إضافة قطعة
+                        </button>
+                        <button class="btn btn-sm btn-warning" onclick="showAddRepairFromScan('${barcode}')">
+                            <i class="fa-solid fa-screwdriver-wrench"></i> إضافة صيانة
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // إذا تم العثور على الباركود، نضيف زر إضافة صيانة جديدة أيضاً
+            html += `
+                <div style="background:#E3F2FD;padding:10px;border-radius:8px;margin-top:8px;text-align:center">
+                    <p style="font-size:12px;color:#666">🔧 هل تريد إضافة صيانة جديدة لهذا الباركود؟</p>
+                    <button class="btn btn-sm btn-warning" onclick="showAddRepairFromScan('${barcode}')">
+                        <i class="fa-solid fa-screwdriver-wrench"></i> إضافة صيانة جديدة
                     </button>
                 </div>
             `;
         }
+        
         container.innerHTML = html;
     }).catch(function(error) {
         console.error('Error performing barcode search:', error);
@@ -3067,6 +3093,142 @@ function performBarcodeSearch(barcode) {
     });
 }
 
+// ============================================================
+// إضافة صيانة جديدة من المسح
+// ============================================================
+function showAddRepairFromScan(barcode) {
+    openModal(`
+        <h3>🔧 إضافة صيانة جديدة</h3>
+        <p style="font-size:12px;color:#666">الباركود: <strong>${barcode}</strong></p>
+        <div class="grid-2">
+            <input type="text" id="scanRepairCustomer" placeholder="اسم الزبون *">
+            <input type="text" id="scanRepairPhone" placeholder="الهاتف">
+        </div>
+        <input type="text" id="scanRepairDevice" placeholder="نوع الجهاز *">
+        <input type="text" id="scanRepairSerial" placeholder="الرقم التسلسلي">
+        <textarea id="scanRepairProblem" placeholder="المشكلة..."></textarea>
+        
+        <div style="background:#F5F5F5;padding:10px;border-radius:8px;margin-top:8px">
+            <div class="flex">
+                <span style="flex:1">أجرة يد: <input type="number" id="scanRepairLabor" value="0" style="width:80px;display:inline" oninput="updateScanRepairTotal()"></span>
+                <span style="flex:1">حسم: <input type="number" id="scanRepairDiscount" value="0" style="width:80px;display:inline" oninput="updateScanRepairTotal()"></span>
+            </div>
+            <div style="font-size:18px;font-weight:700">الإجمالي: <span id="scanRepairTotal" style="color:#4CAF50">0</span> ل.س</div>
+        </div>
+        
+        <div class="flex">
+            <select id="scanRepairPayment" style="flex:1;margin-bottom:0" onchange="toggleScanRepairPaymentFields()">
+                <option value="cash">نقدي</option>
+                <option value="debt">آجل</option>
+                <option value="partial">جزئي</option>
+            </select>
+            <select id="scanRepairStatus" style="flex:1;margin-bottom:0">
+                <option value="in_repair">🔧 في الصيانة</option>
+                <option value="waiting">⏳ قيد الانتظار</option>
+                <option value="fixed">✅ تم الإصلاح</option>
+            </select>
+        </div>
+        <div id="scanRepairPaymentFields" style="display:none">
+            <input type="number" id="scanRepairPaid" placeholder="المبلغ المدفوع" value="0" oninput="updateScanRepairTotal()">
+            <div>المتبقي: <strong id="scanRepairRemaining">0</strong> ل.س</div>
+        </div>
+        
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="saveRepairFromScan('${barcode}')">
+            <i class="fa-solid fa-save"></i> حفظ الصيانة
+        </button>
+    `);
+
+    // تحديث المجموع
+    setTimeout(function() {
+        updateScanRepairTotal();
+    }, 100);
+}
+
+function toggleScanRepairPaymentFields() {
+    var payment = document.getElementById('scanRepairPayment') ? document.getElementById('scanRepairPayment').value : 'cash';
+    var fields = document.getElementById('scanRepairPaymentFields');
+    if (fields) {
+        fields.style.display = (payment === 'partial') ? 'block' : 'none';
+    }
+    updateScanRepairTotal();
+}
+
+function updateScanRepairTotal() {
+    var labor = parseFloat(document.getElementById('scanRepairLabor') ? document.getElementById('scanRepairLabor').value : 0) || 0;
+    var discount = parseFloat(document.getElementById('scanRepairDiscount') ? document.getElementById('scanRepairDiscount').value : 0) || 0;
+    var total = Math.max(0, labor - discount);
+    
+    var totalEl = document.getElementById('scanRepairTotal');
+    if (totalEl) totalEl.textContent = total;
+
+    var paid = parseFloat(document.getElementById('scanRepairPaid') ? document.getElementById('scanRepairPaid').value : 0) || 0;
+    var remaining = Math.max(0, total - paid);
+    var remainingEl = document.getElementById('scanRepairRemaining');
+    if (remainingEl) remainingEl.textContent = remaining;
+}
+
+function saveRepairFromScan(barcode) {
+    var customer = document.getElementById('scanRepairCustomer').value.trim();
+    var device = document.getElementById('scanRepairDevice').value.trim();
+
+    if (!customer || !device) {
+        showToast('⚠️ اسم الزبون ونوع الجهاز مطلوبان');
+        return;
+    }
+
+    var labor = parseFloat(document.getElementById('scanRepairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('scanRepairDiscount').value) || 0;
+    var total = Math.max(0, labor - discount);
+    var paymentType = document.getElementById('scanRepairPayment').value;
+    var paid = paymentType === 'partial' ? (parseFloat(document.getElementById('scanRepairPaid').value) || 0) : 
+               paymentType === 'cash' ? total : 0;
+
+    var repairData = {
+        customerName: customer,
+        phone: document.getElementById('scanRepairPhone').value.trim() || '',
+        deviceType: device,
+        serialNumber: document.getElementById('scanRepairSerial').value.trim() || '',
+        deviceBarcode: barcode,
+        problem: document.getElementById('scanRepairProblem').value.trim() || '',
+        parts: [],
+        partsCost: 0,
+        laborCost: labor,
+        discount: discount,
+        total: total,
+        paid: paid,
+        remaining: Math.max(0, total - paid),
+        paymentType: paymentType,
+        status: document.getElementById('scanRepairStatus').value || 'in_repair',
+        date: new Date().toISOString(),
+        isReceived: false,
+        receivedDate: null
+    };
+
+    addTo('repairs', repairData).then(function(repairId) {
+        if (paymentType === 'cash' && total > 0) {
+            return addTo('cash_flow', {
+                type: 'income',
+                category: 'صيانة',
+                amount: total,
+                description: 'صيانة ' + device + ' - ' + customer,
+                date: new Date().toISOString()
+            });
+        }
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم إضافة الصيانة بنجاح');
+        performBarcodeSearch(barcode);
+        loadRepairsList();
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error saving repair from scan:', error);
+        showToast('❌ حدث خطأ في حفظ الصيانة');
+    });
+}
+
+// ============================================================
+// إضافة قطعة جديدة من المسح
+// ============================================================
 function showAddPartFromScan(barcode) {
     openModal(`
         <h3>📦 إضافة قطعة جديدة</h3>
@@ -3145,6 +3307,8 @@ window.deleteReturn = deleteReturn;
 window.sendWhatsAppReady = sendWhatsAppReady;
 window.showAddPartFromScan = showAddPartFromScan;
 window.savePartFromScan = savePartFromScan;
+window.showAddRepairFromScan = showAddRepairFromScan;
+window.saveRepairFromScan = saveRepairFromScan;
 
 console.log('✅ التطبيق جاهز للاستخدام');
 </script>
