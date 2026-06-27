@@ -2457,3 +2457,422 @@ function processRepairPayment(repairId) {
         showToast('❌ حدث خطأ');
     });
     }
+// ============================================================
+// الجزء 10: المال، التقارير، الباركودات، الإعدادات، النسخ الاحتياطي
+// ============================================================
+
+// ============================================================
+// المال والتدفق النقدي
+// ============================================================
+function loadMoneyTab() {
+    var container = document.getElementById('t-money');
+    if (currentUser && currentUser.role === 'employee') {
+        container.innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-money-bill-wave"></i> التدفق النقدي</h3>
+            <div class="grid-3">
+                <div class="stat-box" style="background:#E8F5E9">
+                    <div class="number" id="totalIncome">0</div>
+                    <div class="label">إجمالي الإيرادات</div>
+                </div>
+                <div class="stat-box" style="background:#FFEBEE">
+                    <div class="number" id="totalExpense">0</div>
+                    <div class="label">إجمالي المصاريف</div>
+                </div>
+                <div class="stat-box" style="background:#E3F2FD">
+                    <div class="number" id="netProfit">0</div>
+                    <div class="label">صافي الربح</div>
+                </div>
+            </div>
+            <div class="flex mt-8">
+                <select id="cashFilter" style="flex:1;margin-bottom:0" onchange="loadCashFlow()">
+                    <option value="all">الكل</option>
+                    <option value="income">الإيرادات</option>
+                    <option value="expense">المصاريف</option>
+                </select>
+                <button class="btn btn-sm btn-warning" onclick="exportCashFlowToCSV()"><i class="fa-solid fa-file-export"></i></button>
+            </div>
+            <div id="cashFlowList" style="max-height:350px;overflow-y:auto;margin-top:8px">
+                <p class="empty-state">⏳ جاري التحميل...</p>
+            </div>
+        </div>
+        <div class="card">
+            <h3><i class="fa-solid fa-chart-pie"></i> ملخص المبيعات</h3>
+            <div id="salesSummary"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    loadCashFlow();
+    loadSalesSummary();
+}
+
+function loadCashFlow() {
+    var filter = document.getElementById('cashFilter') ? document.getElementById('cashFilter').value : 'all';
+    var container = document.getElementById('cashFlowList');
+    if (!container) return;
+
+    Promise.all([
+        getAllFromStore('cash_flow'),
+        getAllFromStore('expenses')
+    ]).then(function(results) {
+        var cashFlow = results[0] || [];
+        var expenses = results[1] || [];
+
+        var allItems = cashFlow.slice();
+        for (var i = 0; i < expenses.length; i++) {
+            var e = expenses[i];
+            var exists = false;
+            for (var j = 0; j < allItems.length; j++) {
+                if (allItems[j].description === e.description && 
+                    allItems[j].amount === e.amount &&
+                    allItems[j].date === e.date) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                allItems.push({
+                    type: 'expense',
+                    category: 'مصروف',
+                    amount: e.amount,
+                    description: e.description,
+                    date: e.date
+                });
+            }
+        }
+
+        if (filter !== 'all') {
+            allItems = allItems.filter(function(item) { return item.type === filter; });
+        }
+
+        allItems.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+        var totalIncome = 0;
+        var totalExpense = 0;
+        for (var k = 0; k < allItems.length; k++) {
+            if (allItems[k].type === 'income') totalIncome += allItems[k].amount;
+            else totalExpense += allItems[k].amount;
+        }
+
+        document.getElementById('totalIncome').textContent = totalIncome;
+        document.getElementById('totalExpense').textContent = totalExpense;
+        document.getElementById('netProfit').textContent = totalIncome - totalExpense;
+
+        if (allItems.length === 0) {
+            container.innerHTML = '<p class="empty-state">📭 لا توجد حركات مالية</p>';
+            return;
+        }
+
+        var html = '';
+        var maxItems = Math.min(allItems.length, 30);
+        for (var l = 0; l < maxItems; l++) {
+            var item = allItems[l];
+            var isIncome = item.type === 'income';
+            var bgColor = isIncome ? '#E8F5E9' : '#FFEBEE';
+            var icon = isIncome ? '📈' : '📉';
+            var sign = isIncome ? '+' : '-';
+            var color = isIncome ? '#2E7D32' : '#C62828';
+            html += `
+                <div style="padding:8px;border-bottom:1px solid #EEE;display:flex;justify-content:space-between;align-items:center;background:${bgColor};border-radius:4px;margin-bottom:4px">
+                    <div>
+                        <span>${icon} ${item.description || 'بدون وصف'}</span>
+                        ${item.category ? '<span class="badge badge-info">' + item.category + '</span>' : ''}
+                        <div class="text-muted">${formatDate(item.date)}</div>
+                    </div>
+                    <div style="font-weight:700;color:${color}">${sign} ${item.amount} ل.س</div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading cash flow:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function loadSalesSummary() {
+    var container = document.getElementById('salesSummary');
+    if (!container) return;
+
+    Promise.all([
+        getAllFromStore('sales'),
+        getAllFromStore('returns')
+    ]).then(function(results) {
+        var sales = results[0] || [];
+        var returns = results[1] || [];
+
+        var today = new Date().toISOString().split('T')[0];
+        var thisMonth = today.substring(0, 7);
+
+        var todaySales = sales.filter(function(s) { return s.date && s.date.split('T')[0] === today; });
+        var todayTotal = todaySales.reduce(function(sum, s) { return sum + (s.total || 0); }, 0);
+
+        var monthSales = sales.filter(function(s) { return s.date && s.date.substring(0, 7) === thisMonth; });
+        var monthTotal = monthSales.reduce(function(sum, s) { return sum + (s.total || 0); }, 0);
+
+        var totalReturns = returns.reduce(function(sum, r) { return sum + (r.total || 0); }, 0);
+
+        container.innerHTML = `
+            <div class="grid-3">
+                <div class="stat-box">
+                    <div class="number" style="color:#2196F3">${todayTotal}</div>
+                    <div class="label">مبيعات اليوم</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" style="color:#4CAF50">${monthTotal}</div>
+                    <div class="label">مبيعات الشهر</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" style="color:#FF9800">${totalReturns}</div>
+                    <div class="label">إجمالي المرتجعات</div>
+                </div>
+            </div>
+            <div style="margin-top:8px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:#666">
+                    <span>عدد الفواتير: ${sales.length}</span>
+                    <span>متوسط الفاتورة: ${sales.length > 0 ? Math.round(monthTotal / sales.length) : 0} ل.س</span>
+                </div>
+            </div>
+        `;
+    }).catch(function(error) {
+        console.error('Error loading sales summary:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function exportCashFlowToCSV() {
+    getAllFromStore('cash_flow').then(function(cashFlow) {
+        var items = cashFlow.slice();
+        if (items.length === 0) {
+            showToast('📭 لا توجد بيانات للتصدير');
+            return;
+        }
+        var csv = 'النوع,التصنيف,المبلغ,الوصف,التاريخ\n';
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            csv += '"' + (item.type === 'income' ? 'إيراد' : 'مصروف') + '","' + (item.category || '') + '",' + (item.amount || 0) + ',"' + (item.description || '') + '","' + (item.date || '') + '"\n';
+        }
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'التدفق_النقدي_وسام_' + new Date().toISOString().split('T')[0] + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم التصدير');
+    }).catch(function(error) {
+        console.error('Error exporting cash flow:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+// ============================================================
+// التقارير
+// ============================================================
+function loadReportsTab() {
+    var container = document.getElementById('t-reports');
+    if (currentUser && currentUser.role === 'employee') {
+        container.innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-chart-bar"></i> التقارير</h3>
+            <div class="flex mb-8">
+                <select id="reportType" style="flex:1;margin-bottom:0" onchange="loadReport()">
+                    <option value="daily">تقرير يومي</option>
+                    <option value="monthly">تقرير شهري</option>
+                    <option value="yearly">تقرير سنوي</option>
+                    <option value="inventory">تقرير المخزون</option>
+                </select>
+                <input type="date" id="reportDate" value="${new Date().toISOString().split('T')[0]}" style="flex:1;margin-bottom:0" onchange="loadReport()">
+            </div>
+            <div id="reportContent"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+        <div class="card">
+            <h3><i class="fa-solid fa-file-pdf"></i> تصدير</h3>
+            <div class="flex">
+                <button class="btn btn-sm btn-primary" onclick="exportReportToCSV()"><i class="fa-solid fa-file-csv"></i> CSV</button>
+                <button class="btn btn-sm btn-danger" onclick="window.print()"><i class="fa-solid fa-file-pdf"></i> طباعة</button>
+            </div>
+        </div>
+    `;
+    loadReport();
+}
+
+function loadReport() {
+    var type = document.getElementById('reportType').value;
+    var date = document.getElementById('reportDate').value;
+    var container = document.getElementById('reportContent');
+    if (!container) return;
+
+    var startDate, endDate;
+    if (type === 'daily') {
+        startDate = date;
+        endDate = date;
+    } else if (type === 'monthly') {
+        startDate = date.substring(0, 7);
+        endDate = date.substring(0, 7);
+    } else if (type === 'yearly') {
+        startDate = date.substring(0, 4);
+        endDate = date.substring(0, 4);
+    }
+
+    Promise.all([
+        getAllFromStore('sales'),
+        getAllFromStore('expenses'),
+        getAllFromStore('returns'),
+        getAllFromStore('debts'),
+        getAllFromStore('parts')
+    ]).then(function(results) {
+        var sales = results[0] || [];
+        var expenses = results[1] || [];
+        var returns = results[2] || [];
+        var debts = results[3] || [];
+        var parts = results[4] || [];
+
+        var filteredSales = sales.filter(function(s) {
+            if (!s.date) return false;
+            if (type === 'daily') return s.date.split('T')[0] === startDate;
+            if (type === 'monthly') return s.date.substring(0, 7) === startDate;
+            if (type === 'yearly') return s.date.substring(0, 4) === startDate;
+            return true;
+        });
+
+        var filteredExpenses = expenses.filter(function(e) {
+            if (!e.date) return false;
+            if (type === 'daily') return e.date.split('T')[0] === startDate;
+            if (type === 'monthly') return e.date.substring(0, 7) === startDate;
+            if (type === 'yearly') return e.date.substring(0, 4) === startDate;
+            return true;
+        });
+
+        var filteredReturns = returns.filter(function(r) {
+            if (!r.date) return false;
+            if (type === 'daily') return r.date.split('T')[0] === startDate;
+            if (type === 'monthly') return r.date.substring(0, 7) === startDate;
+            if (type === 'yearly') return r.date.substring(0, 4) === startDate;
+            return true;
+        });
+
+        var totalSales = filteredSales.reduce(function(sum, s) { return sum + (s.total || 0); }, 0);
+        var totalExpenses = filteredExpenses.reduce(function(sum, e) { return sum + (e.amount || 0); }, 0);
+        var totalReturns = filteredReturns.reduce(function(sum, r) { return sum + (r.total || 0); }, 0);
+        var totalDebts = debts.filter(function(d) { return d.status === 'pending'; }).reduce(function(sum, d) { return sum + (d.remaining || 0); }, 0);
+
+        var periodText = {
+            'daily': 'يومي',
+            'monthly': 'شهري',
+            'yearly': 'سنوي',
+            'inventory': 'المخزون'
+        }[type] || '';
+
+        if (type === 'inventory') {
+            var lowStock = parts.filter(function(p) { return p.quantity <= 5; });
+            var outStock = parts.filter(function(p) { return p.quantity <= 0; });
+            container.innerHTML = `
+                <div style="font-size:14px;font-weight:700;margin-bottom:8px">📦 تقرير المخزون</div>
+                <div class="grid-2">
+                    <div class="stat-box"><div class="number">${parts.length}</div><div class="label">إجمالي القطع</div></div>
+                    <div class="stat-box"><div class="number">${lowStock.length}</div><div class="label">مخزون منخفض (≤5)</div></div>
+                    <div class="stat-box" style="background:#FFEBEE"><div class="number">${outStock.length}</div><div class="label">نفذ من المخزون</div></div>
+                    <div class="stat-box"><div class="number">${parts.reduce(function(sum, p) { return sum + (p.quantity || 0); }, 0)}</div><div class="label">إجمالي القطع</div></div>
+                </div>
+                ${lowStock.length > 0 ? `
+                    <div style="margin-top:8px;background:#FFF3E0;padding:10px;border-radius:8px">
+                        <strong style="color:#E65100">⚠️ قطع منخفضة المخزون:</strong>
+                        ${lowStock.map(function(p) { return '<div>• ' + p.name + ' - ' + p.quantity + '</div>'; }).join('')}
+                    </div>
+                ` : ''}
+            `;
+        } else {
+            var netProfit = totalSales - totalExpenses - totalReturns;
+            container.innerHTML = `
+                <div style="font-size:14px;font-weight:700;margin-bottom:8px">📊 التقرير ${periodText} - ${formatDate(date)}</div>
+                <div class="grid-2">
+                    <div class="stat-box" style="background:#E8F5E9">
+                        <div class="number">${totalSales}</div>
+                        <div class="label">إجمالي المبيعات</div>
+                    </div>
+                    <div class="stat-box" style="background:#FFEBEE">
+                        <div class="number">${totalExpenses}</div>
+                        <div class="label">إجمالي المصاريف</div>
+                    </div>
+                    <div class="stat-box" style="background:#FFF3E0">
+                        <div class="number">${totalReturns}</div>
+                        <div class="label">إجمالي المرتجعات</div>
+                    </div>
+                    <div class="stat-box" style="background:#E3F2FD">
+                        <div class="number" style="color:${netProfit >= 0 ? '#4CAF50' : '#F44336'}">${netProfit}</div>
+                        <div class="label">صافي الربح</div>
+                    </div>
+                </div>
+                <div style="margin-top:8px;font-size:12px;color:#666">
+                    <div>📋 عدد الفواتير: ${filteredSales.length}</div>
+                    <div>💰 الديون المعلقة: ${totalDebts} ل.س</div>
+                </div>
+            `;
+        }
+    }).catch(function(error) {
+        console.error('Error loading report:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ في تحميل التقرير</p>';
+    });
+}
+
+function exportReportToCSV() {
+    var type = document.getElementById('reportType').value;
+    var date = document.getElementById('reportDate').value;
+    
+    Promise.all([
+        getAllFromStore('sales'),
+        getAllFromStore('expenses'),
+        getAllFromStore('returns'),
+        getAllFromStore('parts')
+    ]).then(function(results) {
+        var sales = results[0] || [];
+        var expenses = results[1] || [];
+        var returns = results[2] || [];
+        var parts = results[3] || [];
+
+        var csv = 'نوع التقرير: ' + type + ', التاريخ: ' + date + '\n\n';
+        
+        if (type === 'inventory') {
+            csv += 'الاسم,الباركود,الكمية,سعر البيع\n';
+            for (var i = 0; i < parts.length; i++) {
+                var p = parts[i];
+                csv += '"' + (p.name || '') + '","' + (p.barcode || '') + '",' + (p.quantity || 0) + ',' + (p.sellPrice || 0) + '\n';
+            }
+        } else {
+            csv += 'النوع,الوصف,المبلغ,التاريخ\n';
+            sales.forEach(function(s) {
+                csv += '"مبيعات","فاتورة #' + s.id + '",' + (s.total || 0) + ',"' + (s.date || '') + '"\n';
+            });
+            expenses.forEach(function(e) {
+                csv += '"مصاريف","' + (e.description || '') + '",' + (e.amount || 0) + ',"' + (e.date || '') + '"\n';
+            });
+            returns.forEach(function(r) {
+                csv += '"مرتجعات","مرتجع #' + r.id + '",' + (r.total || 0) + ',"' + (r.date || '') + '"\n';
+            });
+        }
+
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'تقرير_وسام_' + type + '_' + date + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم التصدير');
+    }).catch(function(error) {
+        console.error('Error exporting report:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+// ============================================================
+// الباركودات
+// ============================================================
