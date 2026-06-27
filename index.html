@@ -2347,8 +2347,7 @@ function editRepairStatus(repairId) {
             showToast('❌ الصيانة غير موجودة');
             return;
         }
-
-        openModal(`
+openModal(`
             <h3>🔧 تغيير حالة الصيانة</h3>
             <p><strong>${repair.customerName}</strong> - ${repair.deviceType}</p>
             <select id="newRepairStatus" style="margin-bottom:0">
@@ -2402,5 +2401,59 @@ function payRepairDebt(repairId) {
         }
 
         openModal(`
-            <h3>💰 تسديد باقي الصيان
-            
+            <h3>💰 تسديد باقي الصيانة</h3>
+            <p><strong>${repair.customerName}</strong> - ${repair.deviceType}</p>
+            <p>المتبقي: <strong>${repair.remaining}</strong> ل.س</p>
+            <input type="number" id="repairPayAmount" placeholder="المبلغ" value="${repair.remaining}">
+            <button class="btn btn-success" style="width:100%;justify-content:center;margin-top:8px" onclick="processRepairPayment(${repairId})">
+                <i class="fa-solid fa-check"></i> تأكيد التسديد
+            </button>
+        `);
+    });
+}
+
+function processRepairPayment(repairId) {
+    var amount = parseFloat(document.getElementById('repairPayAmount').value);
+    if (!amount || amount <= 0) {
+        showToast('⚠️ أدخل مبلغ صحيح');
+        return;
+    }
+
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        if (amount > repair.remaining) {
+            showToast('⚠️ المبلغ أكبر من المتبقي (' + repair.remaining + ')');
+            return;
+        }
+
+        repair.paid = (repair.paid || 0) + amount;
+        repair.remaining = Math.max(0, repair.total - repair.paid);
+        return updateInStore('repairs', repair);
+    }).then(function() {
+        return addToStore('cash_flow', {
+            type: 'income',
+            category: 'صيانة',
+            amount: amount,
+            description: 'تسديد صيانة',
+            date: new Date().toISOString()
+        });
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تسديد ' + amount + ' ل.س');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error processing repair payment:', error);
+        showToast('❌ حدث خطأ');
+    });
+    }
