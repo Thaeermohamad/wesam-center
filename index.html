@@ -3217,4 +3217,264 @@ function printBarcodeBatch() {
 // ============================================================
 // الإعدادات
 // ============================================================
+    // ============================================================
+// الإعدادات
+// ============================================================
+function loadSettingsTab() {
+    var container = document.getElementById('t-settings');
+    if (currentUser && currentUser.role === 'employee') {
+        container.innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-gear"></i> الإعدادات</h3>
+            
+            <h4 style="margin-top:10px">🔑 كلمات المرور</h4>
+            <input type="password" id="settingsAdminPass" placeholder="كلمة مرور المدير الجديدة" value="">
+            <input type="password" id="settingsEmployeePass" placeholder="كلمة مرور الموظف الجديدة" value="">
+            <button class="btn btn-primary" onclick="updatePasswords()"><i class="fa-solid fa-save"></i> تحديث كلمات المرور</button>
+            
+            <h4 style="margin-top:15px">📞 معلومات المتجر</h4>
+            <input type="text" id="settingsShopName" placeholder="اسم المتجر" value="">
+            <input type="text" id="settingsShopAddress" placeholder="العنوان" value="">
+            <input type="text" id="settingsPhone1" placeholder="رقم الهاتف 1" value="">
+            <input type="text" id="settingsPhone2" placeholder="رقم الهاتف 2" value="">
+            <button class="btn btn-primary" onclick="updateShopInfo()"><i class="fa-solid fa-save"></i> تحديث المعلومات</button>
+            
+            <h4 style="margin-top:15px">💾 النسخ الاحتياطي</h4>
+            <div class="flex">
+                <button class="btn btn-success flex-1" onclick="exportBackup()"><i class="fa-solid fa-download"></i> تصدير</button>
+                <button class="btn btn-warning flex-1" onclick="document.getElementById('backupFileInput').click()"><i class="fa-solid fa-upload"></i> استيراد</button>
+                <input type="file" id="backupFileInput" accept=".json" style="display:none" onchange="importBackup(event)">
+            </div>
+        </div>
+    `;
+
+    Promise.all([
+        getSetting('adminPassword', '1234'),
+        getSetting('employeePassword', '1111'),
+        getSetting('shopName', 'مركز وسام للإلكترونيات'),
+        getSetting('shopAddress', 'ريف دمشق - مخيم السيدة زينب'),
+        getSetting('shopPhone1', '0937572101'),
+        getSetting('shopPhone2', '0956562865')
+    ]).then(function(values) {
+        document.getElementById('settingsAdminPass').placeholder = 'الحالي: ' + values[0];
+        document.getElementById('settingsEmployeePass').placeholder = 'الحالي: ' + values[1];
+        document.getElementById('settingsShopName').value = values[2];
+        document.getElementById('settingsShopAddress').value = values[3];
+        document.getElementById('settingsPhone1').value = values[4];
+        document.getElementById('settingsPhone2').value = values[5];
+    });
+}
+
+function updatePasswords() {
+    var adminPass = document.getElementById('settingsAdminPass').value.trim();
+    var employeePass = document.getElementById('settingsEmployeePass').value.trim();
+
+    if (!adminPass && !employeePass) {
+        showToast('⚠️ الرجاء إدخال كلمة مرور جديدة على الأقل');
+        return;
+    }
+
+    var promises = [];
+    if (adminPass) promises.push(setSetting('adminPassword', adminPass));
+    if (employeePass) promises.push(setSetting('employeePassword', employeePass));
+
+    Promise.all(promises).then(function() {
+        return getAllFromStore('users').then(function(users) {
+            var promises2 = [];
+            for (var i = 0; i < users.length; i++) {
+                if (users[i].username === 'admin' && adminPass) {
+                    users[i].password = adminPass;
+                    promises2.push(updateInStore('users', users[i]));
+                }
+                if (users[i].username === 'employee' && employeePass) {
+                    users[i].password = employeePass;
+                    promises2.push(updateInStore('users', users[i]));
+                }
+            }
+            return Promise.all(promises2);
+        });
+    }).then(function() {
+        document.getElementById('settingsAdminPass').value = '';
+        document.getElementById('settingsEmployeePass').value = '';
+        showToast('✅ تم تحديث كلمات المرور بنجاح');
+    }).catch(function(error) {
+        console.error('Error updating passwords:', error);
+        showToast('❌ حدث خطأ في تحديث كلمات المرور');
+    });
+}
+
+function updateShopInfo() {
+    var shopName = document.getElementById('settingsShopName').value.trim();
+    var shopAddress = document.getElementById('settingsShopAddress').value.trim();
+    var phone1 = document.getElementById('settingsPhone1').value.trim();
+    var phone2 = document.getElementById('settingsPhone2').value.trim();
+
+    if (!shopName) {
+        showToast('⚠️ اسم المتجر مطلوب');
+        return;
+    }
+
+    Promise.all([
+        setSetting('shopName', shopName),
+        setSetting('shopAddress', shopAddress || 'ريف دمشق - مخيم السيدة زينب'),
+        setSetting('shopPhone1', phone1 || '0937572101'),
+        setSetting('shopPhone2', phone2 || '0956562865')
+    ]).then(function() {
+        showToast('✅ تم تحديث معلومات المتجر');
+        document.getElementById('headerTitle').innerHTML = '<i class="fa-solid fa-microchip"></i> ' + shopName;
+    }).catch(function(error) {
+        console.error('Error updating shop info:', error);
+        showToast('❌ حدث خطأ في تحديث المعلومات');
+    });
+}
+
+// ============================================================
+// النسخ الاحتياطي
+// ============================================================
+function exportBackup() {
+    var stores = ['parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'cash_flow', 'prepared_barcodes', 'settings'];
+    var promises = stores.map(function(name) { return getAllFromStore(name); });
     
+    Promise.all(promises).then(function(results) {
+        var backupData = {};
+        for (var i = 0; i < stores.length; i++) {
+            backupData[stores[i]] = results[i];
+        }
+        
+        var json = JSON.stringify(backupData, null, 2);
+        var blob = new Blob([json], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'وسام_نسخة_احتياطية_' + new Date().toISOString().split('T')[0] + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم تصدير النسخة الاحتياطية');
+    }).catch(function(error) {
+        console.error('Error exporting backup:', error);
+        showToast('❌ حدث خطأ في التصدير');
+    });
+}
+
+function importBackup(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            var data = JSON.parse(e.target.result);
+            var stores = ['parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'cash_flow', 'prepared_barcodes', 'settings'];
+            var promises = [];
+            
+            for (var i = 0; i < stores.length; i++) {
+                var storeName = stores[i];
+                if (data[storeName]) {
+                    promises.push(clearStore(storeName).then(function() {
+                        var items = data[storeName];
+                        var addPromises = [];
+                        for (var j = 0; j < items.length; j++) {
+                            addPromises.push(addToStore(storeName, items[j]));
+                        }
+                        return Promise.all(addPromises);
+                    }));
+                }
+            }
+            
+            Promise.all(promises).then(function() {
+                showToast('✅ تم استيراد النسخة الاحتياطية بنجاح');
+                var activeTab = document.querySelector('.tab.active');
+                if (activeTab) {
+                    var id = activeTab.id.replace('t-', '');
+                    if (id === 'settings') loadSettingsTab();
+                    else if (id === 'home') loadDashboardStats();
+                }
+                loadAllParts();
+            }).catch(function(error) {
+                console.error('Error importing backup:', error);
+                showToast('❌ حدث خطأ في الاستيراد');
+            });
+        } catch (error) {
+            console.error('Error parsing backup file:', error);
+            showToast('❌ ملف غير صالح');
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+// ============================================================
+// دوال مساعدة
+// ============================================================
+function formatDate(dateString) {
+    if (!dateString) return '';
+    try {
+        var date = new Date(dateString);
+        return date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0') + ' ' + String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+    } catch (e) {
+        return dateString;
+    }
+}
+
+// ============================================================
+// التهيئة والتشغيل
+// ============================================================
+console.log('🚀 مركز وسام للإلكترونيات - WissamFinalV18');
+console.log('👥 المدير: 1234 | الموظف: 1111');
+
+function initApp() {
+    dbReady().then(function() {
+        console.log('✅ قاعدة البيانات جاهزة');
+        return initDefaultData();
+    }).then(function() {
+        console.log('✅ تم تهيئة البيانات');
+        if (currentUser) {
+            loadDashboardStats();
+        }
+    }).catch(function(error) {
+        console.error('❌ خطأ في تهيئة التطبيق:', error);
+        showToast('⚠️ حدث خطأ في تهيئة التطبيق');
+    });
+}
+
+setTimeout(initApp, 100);
+
+// ============================================================
+// إضافة وظائف للنافذة العامة
+// ============================================================
+window.addPartToCart = addPartToCart;
+window.switchTab = switchTab;
+window.printBarcode = printBarcode;
+window.quickAddToCart = quickAddToCart;
+window.showAddPartFromScan = showAddPartFromScan;
+window.savePartFromScan = savePartFromScan;
+window.editRepair = editRepair;
+window.deleteRepair = deleteRepair;
+window.toggleRepairReceived = toggleRepairReceived;
+window.deleteSale = deleteSale;
+window.deleteReturn = deleteReturn;
+window.sendWhatsAppReady = sendWhatsAppReady;
+
+// ============================================================
+// معالجة الأخطاء العامة
+// ============================================================
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled rejection:', event.reason);
+});
+
+window.addEventListener('beforeunload', function() {
+    stopBarcodeScanner();
+});
+
+console.log('✅ التطبيق جاهز للاستخدام');
+
+// ============================================================
+// إغلاق الـ Script والـ HTML
+// ============================================================
+</script>
+</body>
+</html>
