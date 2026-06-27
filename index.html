@@ -169,7 +169,7 @@
 
 <script>
 // ============================================================
-// المتغيرات العامة
+// 1. المتغيرات العامة
 // ============================================================
 console.log('🚀 بدء تحميل التطبيق...');
 
@@ -185,8 +185,10 @@ let temporaryData = { repairParts: [] };
 let themeIndex = 0;
 const themes = ['blue', 'green', 'purple'];
 let dbReadyPromise = null;
+let scanStream = null;
+let scanRunning = false;
+let scannedBarcodeValue = '';
 
-// عناصر DOM
 var loginScreen = document.getElementById('loginScreen');
 var passInput = document.getElementById('passInput');
 var loginError = document.getElementById('loginError');
@@ -196,35 +198,19 @@ var tabs = document.getElementById('tabs');
 var toast = document.getElementById('toast');
 
 // ============================================================
-// دوال قاعدة البيانات (مُبسطة)
+// 2. دوال قاعدة البيانات
 // ============================================================
 function dbReady() {
     if (dbReadyPromise) return dbReadyPromise;
-    
     dbReadyPromise = new Promise(function(resolve, reject) {
-        if (db) {
-            resolve(db);
-            return;
-        }
-        
+        if (db) { resolve(db); return; }
         try {
             var request = indexedDB.open(DB_NAME, DB_VERSION);
-            
-            request.onerror = function(event) {
-                console.error('❌ IndexedDB error:', event.target.error);
-                reject(event.target.error);
-            };
-            
-            request.onsuccess = function(event) {
-                db = event.target.result;
-                console.log('✅ IndexedDB opened successfully');
-                resolve(db);
-            };
-            
-            request.onupgradeneeded = function(event) {
-                var d = event.target.result;
+            request.onerror = function(e) { console.error('❌ IndexedDB error:', e.target.error); reject(e.target.error); };
+            request.onsuccess = function(e) { db = e.target.result; console.log('✅ IndexedDB opened'); resolve(db); };
+            request.onupgradeneeded = function(e) {
+                var d = e.target.result;
                 console.log('🔄 Upgrading database...');
-                
                 var stores = ['users', 'parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'settings', 'prepared_barcodes', 'cash_flow'];
                 stores.forEach(function(name) {
                     if (!d.objectStoreNames.contains(name)) {
@@ -233,12 +219,8 @@ function dbReady() {
                     }
                 });
             };
-        } catch (error) {
-            console.error('❌ Error opening database:', error);
-            reject(error);
-        }
+        } catch (error) { console.error('❌ Error:', error); reject(error); }
     });
-    
     return dbReadyPromise;
 }
 
@@ -250,9 +232,7 @@ function getAll(storeName) {
                 var request = tx.objectStore(storeName).getAll();
                 request.onsuccess = function() { resolve(request.result || []); };
                 request.onerror = function() { reject(request.error); };
-            } catch (error) {
-                reject(error);
-            }
+            } catch (error) { reject(error); }
         }).catch(reject);
     });
 }
@@ -265,9 +245,7 @@ function addTo(storeName, data) {
                 var request = tx.objectStore(storeName).add(data);
                 request.onsuccess = function() { resolve(request.result); };
                 request.onerror = function() { reject(request.error); };
-            } catch (error) {
-                reject(error);
-            }
+            } catch (error) { reject(error); }
         }).catch(reject);
     });
 }
@@ -280,9 +258,7 @@ function updateIn(storeName, data) {
                 var request = tx.objectStore(storeName).put(data);
                 request.onsuccess = function() { resolve(request.result); };
                 request.onerror = function() { reject(request.error); };
-            } catch (error) {
-                reject(error);
-            }
+            } catch (error) { reject(error); }
         }).catch(reject);
     });
 }
@@ -295,9 +271,7 @@ function deleteFrom(storeName, id) {
                 var request = tx.objectStore(storeName).delete(id);
                 request.onsuccess = function() { resolve(); };
                 request.onerror = function() { reject(request.error); };
-            } catch (error) {
-                reject(error);
-            }
+            } catch (error) { reject(error); }
         }).catch(reject);
     });
 }
@@ -310,9 +284,7 @@ function clearStore(storeName) {
                 var request = tx.objectStore(storeName).clear();
                 request.onsuccess = function() { resolve(); };
                 request.onerror = function() { reject(request.error); };
-            } catch (error) {
-                reject(error);
-            }
+            } catch (error) { reject(error); }
         }).catch(reject);
     });
 }
@@ -338,10 +310,8 @@ function setSetting(key, value) {
     });
 }
 
-console.log('✅ دوال قاعدة البيانات جاهزة');
-
 // ============================================================
-// تسجيل الدخول
+// 3. تسجيل الدخول
 // ============================================================
 function initDefaultData() {
     console.log('🔄 تهيئة البيانات...');
@@ -365,31 +335,21 @@ function initDefaultData() {
             }
             return Promise.all(promises);
         });
-    }).then(function() {
-        console.log('✅ تم تهيئة البيانات');
-    }).catch(function(error) {
-        console.error('❌ خطأ في التهيئة:', error);
-    });
+    }).then(function() { console.log('✅ تم تهيئة البيانات'); })
+    .catch(function(error) { console.error('❌ خطأ في التهيئة:', error); });
 }
 
 function doLogin() {
     var password = passInput.value.trim();
     loginError.textContent = '';
-    if (!password) {
-        loginError.textContent = '⚠️ الرجاء إدخال كلمة المرور';
-        return;
-    }
+    if (!password) { loginError.textContent = '⚠️ الرجاء إدخال كلمة المرور'; return; }
     console.log('🔑 محاولة تسجيل الدخول...');
     
-    dbReady().then(function() {
-        return getAll('users');
-    }).then(function(users) {
+    dbReady().then(function() { return getAll('users'); })
+    .then(function(users) {
         var user = null;
         for (var i = 0; i < users.length; i++) {
-            if (users[i].password === password) {
-                user = users[i];
-                break;
-            }
+            if (users[i].password === password) { user = users[i]; break; }
         }
         if (user) {
             currentUser = user;
@@ -449,10 +409,8 @@ function changeTheme() {
 
 function switchTab(id) {
     console.log('🔄 التبديل إلى:', id);
-    
     document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
     document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
-    
     var tab = document.getElementById('t-' + id);
     var btn = document.querySelector('.tabs button[data-tab="' + id + '"]');
     if (tab) tab.classList.add('active');
@@ -460,18 +418,10 @@ function switchTab(id) {
     content.scrollTop = 0;
 
     var loaders = {
-        home: loadDashboardStats,
-        store: loadStoreTab,
-        sales: loadSalesTab,
-        returns: loadReturnsTab,
-        debts: loadDebtsTab,
-        repair: loadRepairTab,
-        money: loadMoneyTab,
-        expenses: loadExpensesTab,
-        reports: loadReportsTab,
-        barcode: loadBarcodeTab,
-        scan: loadScanTab,
-        settings: loadSettingsTab
+        home: loadDashboardStats, store: loadStoreTab, sales: loadSalesTab,
+        returns: loadReturnsTab, debts: loadDebtsTab, repair: loadRepairTab,
+        money: loadMoneyTab, expenses: loadExpensesTab, reports: loadReportsTab,
+        barcode: loadBarcodeTab, scan: loadScanTab, settings: loadSettingsTab
     };
     if (loaders[id]) {
         try { loaders[id](); } catch(e) { console.error('❌ خطأ في التحميل:', e); showToast('⚠️ حدث خطأ'); }
@@ -479,9 +429,7 @@ function switchTab(id) {
 }
 
 document.querySelectorAll('.tabs button').forEach(function(b) {
-    b.addEventListener('click', function() {
-        switchTab(this.getAttribute('data-tab'));
-    });
+    b.addEventListener('click', function() { switchTab(this.getAttribute('data-tab')); });
 });
 
 var toastTimeout = null;
@@ -502,10 +450,16 @@ function closeModal() {
     document.getElementById('modalOverlay').classList.remove('show');
 }
 
-console.log('✅ دوال تسجيل الدخول جاهزة');
+function formatDate(dateString) {
+    if (!dateString) return '';
+    try {
+        var date = new Date(dateString);
+        return date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0');
+    } catch(e) { return dateString; }
+}
 
 // ============================================================
-// لوحة التحكم
+// 4. لوحة التحكم
 // ============================================================
 function loadDashboardStats() {
     console.log('📊 تحميل لوحة التحكم...');
@@ -543,108 +497,2611 @@ function loadDashboardStats() {
 }
 
 // ============================================================
-// بقية الدوال (مختصرة لتوفير المساحة)
+// 5. المخزن
 // ============================================================
-
-// دالة فارغة مؤقتاً للاختبار
 function loadStoreTab() {
     var container = document.getElementById('t-store');
     if (!container) return;
     container.innerHTML = `
         <div class="card">
             <h3><i class="fa-solid fa-boxes-stacked"></i> المخزن</h3>
-            <p class="empty-state">✅ المخزن يعمل!</p>
-            <button class="btn btn-primary" onclick="showToast('تم الضغط!')">اختبار</button>
+            <div class="flex mb-8">
+                <input type="text" id="storeSearch" placeholder="🔍 بحث..." class="flex-1" oninput="loadAllParts()">
+                <button class="btn btn-primary btn-sm" onclick="showPartForm()"><i class="fa-solid fa-plus"></i></button>
+                <button class="btn btn-sm btn-warning" onclick="exportPartsToCSV()"><i class="fa-solid fa-file-export"></i></button>
+            </div>
+            <div id="storePartsList" style="max-height:400px;overflow-y:auto"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+        <div class="card" id="lowStockAlert" style="display:none;background:#FFF3E0;border-right:4px solid #FF9800">
+            <h3 style="color:#E65100"><i class="fa-solid fa-triangle-exclamation"></i> نقص المخزون</h3>
+            <div id="lowStockList"></div>
         </div>
     `;
+    loadAllParts();
 }
 
+function loadAllParts() {
+    var searchInput = document.getElementById('storeSearch');
+    var search = searchInput ? searchInput.value.toLowerCase() : '';
+    var container = document.getElementById('storePartsList');
+    if (!container) return;
+
+    getAll('parts').then(function(parts) {
+        var filtered = parts;
+        if (search) {
+            filtered = parts.filter(function(p) {
+                return (p.name && p.name.toLowerCase().indexOf(search) !== -1) ||
+                       (p.barcode && p.barcode.toLowerCase().indexOf(search) !== -1) ||
+                       (p.category && p.category.toLowerCase().indexOf(search) !== -1);
+            });
+        }
+        displayParts(filtered);
+        checkLowStock(filtered);
+    }).catch(function(error) {
+        console.error('Error loading parts:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ في تحميل القطع</p>';
+    });
+}
+
+function displayParts(parts) {
+    var container = document.getElementById('storePartsList');
+    if (!container) return;
+    if (!parts || parts.length === 0) {
+        container.innerHTML = '<p class="empty-state">📭 لا توجد قطع في المخزن</p>';
+        return;
+    }
+
+    var html = '<div class="text-muted mb-8">عدد القطع: ' + parts.length + '</div>';
+    for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        var stockColor = p.quantity <= 0 ? '#F44336' : p.quantity <= 5 ? '#FF9800' : '#4CAF50';
+        html += `
+            <div style="background:#FFF;border:1px solid #E0E0E0;border-radius:8px;padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+                <div style="flex:1;min-width:0">
+                    <strong>${p.name || 'بدون اسم'}</strong>
+                    <div style="font-size:11px;color:#666">🏷️ ${p.barcode || '-'}</div>
+                    <div style="font-size:12px;margin-top:4px">
+                        <span style="color:${stockColor};font-weight:700">${p.quantity}</span>
+                        | ${p.sellPrice || 0} ل.س
+                        ${p.category ? '| <span class="badge badge-info">' + p.category + '</span>' : ''}
+                    </div>
+                </div>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <button class="btn btn-sm btn-success" onclick="addPartToCart(${p.id})" title="إضافة للفاتورة"><i class="fa-solid fa-cart-plus"></i></button>
+                    <button class="btn btn-sm btn-primary" onclick="editPart(${p.id})" title="تعديل"><i class="fa-solid fa-pen"></i></button>
+                    <button class="btn btn-sm btn-warning" onclick="printBarcode('${p.barcode || ''}','${p.name}')" title="طباعة باركود"><i class="fa-solid fa-print"></i></button>
+                    <button class="btn btn-sm btn-danger" onclick="deletePartConfirm(${p.id})" title="حذف"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+}
+
+function checkLowStock(parts) {
+    var alert = document.getElementById('lowStockAlert');
+    var list = document.getElementById('lowStockList');
+    if (!alert || !list) return;
+    var low = [], out = [];
+    for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        if (p.quantity <= 0) out.push(p);
+        else if (p.quantity <= 5) low.push(p);
+    }
+    if (low.length === 0 && out.length === 0) { alert.style.display = 'none'; return; }
+    alert.style.display = 'block';
+    var html = '';
+    if (out.length > 0) {
+        html += '<div style="color:#F44336;font-weight:700">⚠️ نفذ من المخزون:</div>';
+        for (var j = 0; j < out.length; j++) html += '<div style="padding:2px 0">• ' + out[j].name + '</div>';
+    }
+    if (low.length > 0) {
+        html += '<div style="color:#FF9800;font-weight:700;margin-top:4px">⚠️ مخزون منخفض (≤5):</div>';
+        for (var k = 0; k < low.length; k++) html += '<div style="padding:2px 0">• ' + low[k].name + ' - <strong>' + low[k].quantity + '</strong></div>';
+    }
+    list.innerHTML = html;
+}
+
+// ============================================================
+// 6. إدارة القطع (إضافة/تعديل/حذف)
+// ============================================================
+function showPartForm(part) {
+    var isEdit = part ? true : false;
+    var nameVal = isEdit ? part.name : '';
+    var barcodeVal = isEdit ? part.barcode : '';
+    var categoryVal = isEdit ? part.category : '';
+    var quantityVal = isEdit ? part.quantity : 0;
+    var costVal = isEdit ? part.costPrice : 0;
+    var sellVal = isEdit ? part.sellPrice : '';
+    var idVal = isEdit ? part.id : 'null';
+
+    openModal(`
+        <h3>${isEdit ? 'تعديل' : 'إضافة'} قطعة</h3>
+        <input type="text" id="partName" placeholder="الاسم *" value="${nameVal}">
+        <input type="text" id="partBarcode" placeholder="باركود (اتركه فارغ للتوليد التلقائي)" value="${barcodeVal}">
+        <input type="text" id="partCategory" placeholder="الصنف" value="${categoryVal}">
+        <div class="flex">
+            <input type="number" id="partQuantity" placeholder="الكمية" value="${quantityVal}" style="flex:1">
+            <input type="number" id="partCostPrice" placeholder="سعر الشراء" value="${costVal}" style="flex:1">
+        </div>
+        <input type="number" id="partSellPrice" placeholder="سعر البيع *" value="${sellVal}">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="savePart(${idVal})">
+            <i class="fa-solid fa-save"></i> حفظ
+        </button>
+    `);
+}
+
+function generateStoreBarcode() {
+    return getAll('parts').then(function(parts) {
+        var maxNum = 0;
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (p.barcode && p.barcode.indexOf('ST-') === 0) {
+                var num = parseInt(p.barcode.replace('ST-', ''));
+                if (!isNaN(num) && num > maxNum) maxNum = num;
+            }
+        }
+        return 'ST-' + String(maxNum + 1).padStart(4, '0');
+    });
+}
+
+function savePart(id) {
+    var name = document.getElementById('partName').value.trim();
+    var barcode = document.getElementById('partBarcode').value.trim();
+    var category = document.getElementById('partCategory').value.trim();
+    var quantity = parseInt(document.getElementById('partQuantity').value) || 0;
+    var costPrice = parseFloat(document.getElementById('partCostPrice').value) || 0;
+    var sellPrice = parseFloat(document.getElementById('partSellPrice').value) || 0;
+
+    if (!name || sellPrice <= 0) { showToast('⚠️ الاسم وسعر البيع مطلوبان'); return; }
+
+    if (id && id !== 'null') {
+        getAll('parts').then(function(parts) {
+            var existing = null;
+            for (var i = 0; i < parts.length; i++) {
+                if (parts[i].id === parseInt(id)) { existing = parts[i]; break; }
+            }
+            if (!existing) { showToast('❌ القطعة غير موجودة'); return; }
+            var updated = {
+                id: parseInt(id), name: name, barcode: barcode || existing.barcode,
+                category: category || existing.category, quantity: quantity,
+                costPrice: costPrice, sellPrice: sellPrice,
+                createdAt: existing.createdAt, updatedAt: new Date().toISOString()
+            };
+            return updateIn('parts', updated);
+        }).then(function() { closeModal(); loadAllParts(); showToast('✅ تم تحديث ' + name); })
+        .catch(function(error) { console.error('Error updating part:', error); showToast('❌ حدث خطأ في التحديث'); });
+    } else {
+        var saveNewPart = function(finalBarcode) {
+            return addTo('parts', { name: name, barcode: finalBarcode, category: category, quantity: quantity, costPrice: costPrice, sellPrice: sellPrice, createdAt: new Date().toISOString() });
+        };
+        var checkBarcode = function(finalBarcode) {
+            return getAll('parts').then(function(parts) {
+                for (var i = 0; i < parts.length; i++) {
+                    if (parts[i].barcode === finalBarcode) { showToast('⚠️ الباركود موجود مسبقاً'); return null; }
+                }
+                return finalBarcode;
+            });
+        };
+        var promise;
+        if (barcode) {
+            promise = checkBarcode(barcode).then(function(finalBarcode) { if (finalBarcode) return saveNewPart(finalBarcode); return null; });
+        } else {
+            promise = generateStoreBarcode().then(function(newBarcode) {
+                return checkBarcode(newBarcode).then(function(finalBarcode) { if (finalBarcode) return saveNewPart(finalBarcode); return null; });
+            });
+        }
+        if (promise) {
+            promise.then(function() { closeModal(); loadAllParts(); showToast('✅ تم إضافة ' + name); })
+            .catch(function(error) { console.error('Error adding part:', error); showToast('❌ حدث خطأ في الإضافة'); });
+        }
+    }
+}
+
+function editPart(id) {
+    getAll('parts').then(function(parts) {
+        var part = null;
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i].id === id) { part = parts[i]; break; }
+        }
+        if (part) showPartForm(part);
+        else showToast('❌ القطعة غير موجودة');
+    }).catch(function(error) { console.error('Error editing part:', error); showToast('❌ حدث خطأ'); });
+}
+
+function deletePartConfirm(id) {
+    if (!confirm('هل أنت متأكد من حذف هذه القطعة؟')) return;
+    deleteFrom('parts', id).then(function() { showToast('🗑️ تم الحذف'); loadAllParts(); })
+    .catch(function() { showToast('❌ حدث خطأ في الحذف'); });
+}
+
+function exportPartsToCSV() {
+    getAll('parts').then(function(parts) {
+        if (parts.length === 0) { showToast('📭 لا توجد بيانات للتصدير'); return; }
+        var csv = 'الاسم,الباركود,الصنف,الكمية,سعر الشراء,سعر البيع\n';
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            csv += '"' + (p.name || '') + '","' + (p.barcode || '') + '","' + (p.category || '') + '",' + (p.quantity || 0) + ',' + (p.costPrice || 0) + ',' + (p.sellPrice || 0) + '\n';
+        }
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'مخزن_وسام_' + new Date().toISOString().split('T')[0] + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم تصدير البيانات');
+    }).catch(function(error) { console.error('Error exporting CSV:', error); showToast('❌ حدث خطأ في التصدير'); });
+}
+
+// ============================================================
+// 7. المبيعات (مع حقل التاريخ)
+// ============================================================
 function loadSalesTab() {
+    console.log('🛒 تحميل المبيعات...');
     var container = document.getElementById('t-sales');
     if (!container) return;
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-cart-shopping"></i> المبيعات</h3><p class="empty-state">✅ المبيعات تعمل!</p></div>`;
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-cart-shopping"></i> فاتورة</h3>
+            <div class="flex">
+                <input type="date" id="saleDate" value="${new Date().toISOString().split('T')[0]}" style="flex:1;margin-bottom:0">
+                <label style="font-size:12px;color:#666;white-space:nowrap;margin-right:8px">📅 التاريخ</label>
+            </div>
+            <input type="text" id="salesSearchPart" placeholder="🔍 بحث عن قطعة..." oninput="searchPartsForSale()">
+            <div id="partsSearchResults" style="max-height:150px;overflow-y:auto"></div>
+            <div id="cartItems"><p class="empty-state">🛒 السلة فارغة</p></div>
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px">
+                <span>الإجمالي: </span><span id="cartTotal" style="font-weight:700;font-size:18px">0</span> ل.س
+            </div>
+            <div class="flex flex-wrap mt-8">
+                <button class="btn btn-success flex-1" onclick="completeSale('cash')">💵 نقدي</button>
+                <button class="btn btn-warning flex-1" onclick="completeSale('debt')">📋 آجل</button>
+                <button class="btn btn-danger btn-sm" onclick="clearCart()"><i class="fa-solid fa-trash"></i></button>
+                <button class="btn" style="background:#25D366;color:#FFF" onclick="shareWhatsApp()"><i class="fa-brands fa-whatsapp"></i></button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>📋 آخر المبيعات</h3>
+            <div id="recentSales"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    updateCartDisplay();
+    loadRecentSales();
 }
 
+function searchPartsForSale() {
+    var input = document.getElementById('salesSearchPart');
+    var container = document.getElementById('partsSearchResults');
+    if (!input || !container) return;
+    var query = input.value.toLowerCase().trim();
+    if (query.length < 1) { container.innerHTML = ''; return; }
+
+    getAll('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if ((p.name && p.name.toLowerCase().indexOf(query) !== -1) ||
+                (p.barcode && p.barcode.toLowerCase().indexOf(query) !== -1)) {
+                results.push(p);
+            }
+        }
+        if (results.length === 0) { container.innerHTML = '<p class="empty-state">❌ لا توجد نتائج</p>'; return; }
+
+        var html = '';
+        var maxResults = Math.min(results.length, 8);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            var inCart = false;
+            for (var k = 0; k < currentCart.length; k++) {
+                if (currentCart[k].partId === p.id) { inCart = true; break; }
+            }
+            var stockLabel = p.quantity <= 0 ? ' (نفذ)' : p.quantity <= 5 ? ' (منخفض)' : '';
+            html += `
+                <div style="background:#E8F5E9;padding:8px;cursor:pointer;border-radius:6px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" 
+                     onclick="addPartToCart(${p.id})">
+                    <span>${p.name} ${stockLabel}</span>
+                    <span style="font-weight:700">${p.sellPrice} ل.س</span>
+                    ${inCart ? '<span class="badge badge-info">' + currentCart.find(function(c) { return c.partId === p.id; }).quantity + '</span>' : ''}
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) { console.error('Error searching parts:', error); });
+}
+
+function addPartToCart(partId) {
+    getAll('parts').then(function(parts) {
+        var part = null;
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i].id === partId) { part = parts[i]; break; }
+        }
+        if (!part) { showToast('❌ القطعة غير موجودة'); return; }
+        if (part.quantity <= 0) { showToast('⚠️ القطعة نفذت من المخزن'); return; }
+
+        var existing = null;
+        for (var j = 0; j < currentCart.length; j++) {
+            if (currentCart[j].partId === partId) { existing = currentCart[j]; break; }
+        }
+        if (existing) {
+            if (existing.quantity >= part.quantity) { showToast('⚠️ الكمية المطلوبة غير متوفرة'); return; }
+            existing.quantity++;
+        } else {
+            currentCart.push({ partId: part.id, name: part.name, price: part.sellPrice, quantity: 1 });
+        }
+        updateCartDisplay();
+        showToast('✅ تم إضافة ' + part.name);
+        document.getElementById('salesSearchPart').value = '';
+        document.getElementById('partsSearchResults').innerHTML = '';
+    }).catch(function(error) { console.error('Error adding to cart:', error); showToast('❌ حدث خطأ'); });
+}
+
+function updateCartDisplay() {
+    var container = document.getElementById('cartItems');
+    var totalEl = document.getElementById('cartTotal');
+    if (!container) return;
+
+    if (currentCart.length === 0) {
+        container.innerHTML = '<p class="empty-state">🛒 السلة فارغة</p>';
+        if (totalEl) totalEl.textContent = '0';
+        return;
+    }
+
+    var total = 0;
+    var html = '';
+    for (var i = 0; i < currentCart.length; i++) {
+        var item = currentCart[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        html += `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #EEE">
+                <div><strong>${item.name}</strong><span class="text-muted"> ×${item.quantity}</span></div>
+                <div><span>${subtotal} ل.س</span><button class="btn btn-sm btn-danger" onclick="removeCartItem(${i})" style="margin-right:6px">✕</button></div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    if (totalEl) totalEl.textContent = total;
+}
+
+function removeCartItem(index) {
+    if (index >= 0 && index < currentCart.length) {
+        currentCart.splice(index, 1);
+        updateCartDisplay();
+    }
+}
+
+function clearCart() {
+    if (currentCart.length === 0) return;
+    if (confirm('هل تريد إفراغ السلة؟')) {
+        currentCart = [];
+        updateCartDisplay();
+        showToast('🗑️ تم إفراغ السلة');
+    }
+}
+
+function completeSale(paymentType) {
+    if (currentCart.length === 0) { showToast('⚠️ السلة فارغة'); return; }
+
+    var total = 0;
+    for (var i = 0; i < currentCart.length; i++) {
+        total += currentCart[i].price * currentCart[i].quantity;
+    }
+
+    var customerName = '';
+    if (paymentType === 'debt') {
+        customerName = prompt('👤 اسم الزبون:');
+        if (!customerName || customerName.trim() === '') { showToast('⚠️ اسم الزبون مطلوب'); return; }
+        customerName = customerName.trim();
+    }
+
+    var saleDateInput = document.getElementById('saleDate');
+    var saleDate = saleDateInput ? saleDateInput.value : new Date().toISOString().split('T')[0];
+    if (!saleDate) saleDate = new Date().toISOString().split('T')[0];
+
+    var saleData = {
+        items: JSON.parse(JSON.stringify(currentCart)),
+        total: total,
+        paymentType: paymentType,
+        customerName: customerName || '',
+        date: new Date(saleDate + 'T00:00:00').toISOString()
+    };
+
+    addTo('sales', saleData).then(function(saleId) {
+        return addTo('cash_flow', {
+            type: 'income', category: 'مبيعات', amount: total,
+            description: 'فاتورة #' + saleId + (customerName ? ' - ' + customerName : ''),
+            date: new Date(saleDate + 'T00:00:00').toISOString()
+        });
+    }).then(function() {
+        return getAll('parts');
+    }).then(function(parts) {
+        var promises = [];
+        for (var j = 0; j < currentCart.length; j++) {
+            var cartItem = currentCart[j];
+            for (var k = 0; k < parts.length; k++) {
+                if (parts[k].id === cartItem.partId) {
+                    parts[k].quantity = Math.max(0, parts[k].quantity - cartItem.quantity);
+                    promises.push(updateIn('parts', parts[k]));
+                    break;
+                }
+            }
+        }
+        return Promise.all(promises);
+    }).then(function() {
+        if (paymentType === 'debt') {
+            return addTo('debts', {
+                customerName: customerName, total: total, paid: 0, remaining: total,
+                status: 'pending', date: new Date(saleDate + 'T00:00:00').toISOString()
+            });
+        }
+    }).then(function() {
+        currentCart = [];
+        updateCartDisplay();
+        loadRecentSales();
+        loadAllParts();
+        showToast('✅ تمت عملية البيع - ' + total + ' ل.س');
+    }).catch(function(error) {
+        console.error('Error completing sale:', error);
+        showToast('❌ حدث خطأ في إتمام البيع');
+    });
+}
+
+function loadRecentSales() {
+    var container = document.getElementById('recentSales');
+    if (!container) return;
+
+    getAll('sales').then(function(sales) {
+        if (sales.length === 0) { container.innerHTML = '<p class="empty-state">📭 لا توجد مبيعات</p>'; return; }
+        sales.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        var html = '';
+        var maxItems = Math.min(sales.length, 10);
+        for (var i = 0; i < maxItems; i++) {
+            var s = sales[i];
+            var items = '';
+            if (s.items) {
+                var itemNames = [];
+                for (var j = 0; j < s.items.length; j++) itemNames.push(s.items[j].name);
+                items = itemNames.join(', ');
+            }
+            html += `
+                <div style="padding:6px 0;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span style="font-weight:700">${s.total} ل.س</span>
+                        ${s.customerName ? '<span class="badge badge-warning">' + s.customerName + '</span>' : ''}
+                        <div class="text-muted">${items}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span class="text-muted">${formatDate(s.date)}</span>
+                        <button class="btn btn-sm btn-danger" onclick="deleteSale(${s.id})" title="حذف الفاتورة"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading recent sales:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function deleteSale(saleId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذه الفاتورة؟\nسيتم إعادة القطع إلى المخزن.')) return;
+    
+    getAll('sales').then(function(sales) {
+        var sale = null;
+        for (var i = 0; i < sales.length; i++) {
+            if (sales[i].id === saleId) { sale = sales[i]; break; }
+        }
+        if (!sale) { showToast('❌ الفاتورة غير موجودة'); return; }
+
+        if (sale.items && sale.items.length > 0) {
+            return getAll('parts').then(function(parts) {
+                var promises = [];
+                for (var j = 0; j < sale.items.length; j++) {
+                    var item = sale.items[j];
+                    for (var k = 0; k < parts.length; k++) {
+                        if (parts[k].id === item.partId) {
+                            parts[k].quantity = (parts[k].quantity || 0) + item.quantity;
+                            promises.push(updateIn('parts', parts[k]));
+                            break;
+                        }
+                    }
+                }
+                return Promise.all(promises);
+            }).then(function() {
+                return getAll('cash_flow').then(function(cashFlow) {
+                    var promises = [];
+                    for (var l = 0; l < cashFlow.length; l++) {
+                        var cf = cashFlow[l];
+                        if (cf.description && cf.description.indexOf('فاتورة #' + saleId) !== -1) {
+                            promises.push(deleteFrom('cash_flow', cf.id));
+                        }
+                    }
+                    return Promise.all(promises);
+                });
+            }).then(function() {
+                return deleteFrom('sales', saleId);
+            });
+        } else {
+            return deleteFrom('sales', saleId);
+        }
+    }).then(function() {
+        showToast('🗑️ تم حذف الفاتورة وإعادة القطع للمخزن');
+        loadRecentSales();
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error deleting sale:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
+}
+
+function shareWhatsApp() {
+    if (currentCart.length === 0) { showToast('⚠️ السلة فارغة'); return; }
+    var total = 0;
+    var message = '🧾 *مركز وسام*%0A';
+    for (var i = 0; i < currentCart.length; i++) {
+        var item = currentCart[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        message += '• ' + item.name + ' ×' + item.quantity + ' = ' + subtotal + ' ل.س%0A';
+    }
+    message += '%0A*الإجمالي: ' + total + ' ل.س*';
+    window.open('https://wa.me/?text=' + message, '_blank');
+}
+
+// ============================================================
+// 8. المصاريف (مع تعديل/حذف فردي)
+// ============================================================
+function showQuickExpense() {
+    if (currentUser && currentUser.role === 'employee') {
+        showToast('⛔ غير مسموح للموظفين');
+        return;
+    }
+    openModal(`
+        <h3>💸 إضافة مصروف</h3>
+        <input type="text" id="expenseDesc" placeholder="الوصف *">
+        <input type="number" id="expenseAmount" placeholder="المبلغ *">
+        <input type="text" id="expenseCategory" placeholder="التصنيف (اختياري)">
+        <input type="date" id="expenseDate" value="${new Date().toISOString().split('T')[0]}">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveQuickExpense()">
+            <i class="fa-solid fa-save"></i> حفظ
+        </button>
+    `);
+}
+
+function saveQuickExpense() {
+    var desc = document.getElementById('expenseDesc').value.trim();
+    var amount = parseFloat(document.getElementById('expenseAmount').value);
+    var category = document.getElementById('expenseCategory').value.trim();
+    var expenseDate = document.getElementById('expenseDate').value || new Date().toISOString().split('T')[0];
+
+    if (!desc || !amount || amount <= 0) { showToast('⚠️ الوصف والمبلغ مطلوبان'); return; }
+
+    addTo('expenses', {
+        description: desc, amount: amount, category: category || 'عام',
+        date: new Date(expenseDate + 'T00:00:00').toISOString()
+    }).then(function() {
+        return addTo('cash_flow', {
+            type: 'expense', category: 'مصروف', amount: amount,
+            description: desc, date: new Date(expenseDate + 'T00:00:00').toISOString()
+        });
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم إضافة المصروف');
+        if (document.getElementById('t-expenses').classList.contains('active')) loadExpensesTab();
+        if (document.getElementById('t-money').classList.contains('active')) loadMoneyTab();
+    }).catch(function(error) {
+        console.error('Error saving expense:', error);
+        showToast('❌ حدث خطأ في الحفظ');
+    });
+}
+
+function loadExpensesTab() {
+    if (currentUser && currentUser.role === 'employee') {
+        document.getElementById('t-expenses').innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
+        return;
+    }
+
+    var container = document.getElementById('t-expenses');
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-receipt"></i> المصاريف</h3>
+            <div class="flex mb-8">
+                <button class="btn btn-primary" onclick="showQuickExpense()"><i class="fa-solid fa-plus"></i> إضافة</button>
+                <button class="btn btn-sm btn-warning" onclick="exportExpensesToCSV()"><i class="fa-solid fa-file-export"></i></button>
+            </div>
+            <div id="expensesList"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+
+    getAll('expenses').then(function(expenses) {
+        var list = document.getElementById('expensesList');
+        if (!list) return;
+        if (expenses.length === 0) { list.innerHTML = '<p class="empty-state">📭 لا توجد مصاريف</p>'; return; }
+
+        expenses.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        var total = 0;
+        for (var i = 0; i < expenses.length; i++) total += expenses[i].amount;
+        var html = '<div class="text-muted">الإجمالي: <strong>' + total + '</strong> ل.س</div>';
+        var maxItems = Math.min(expenses.length, 50);
+        for (var j = 0; j < maxItems; j++) {
+            var e = expenses[j];
+            html += `
+                <div style="padding:8px 0;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span>${e.description}</span>
+                        ${e.category ? '<span class="badge badge-info">' + e.category + '</span>' : ''}
+                        <div class="text-muted">${formatDate(e.date)}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="font-weight:700">${e.amount}</span> ل.س
+                        <button class="btn btn-sm btn-primary" onclick="editExpense(${e.id})"><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteExpense(${e.id})"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        }
+        list.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading expenses:', error);
+        document.getElementById('expensesList').innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function editExpense(expenseId) {
+    getAll('expenses').then(function(expenses) {
+        var expense = null;
+        for (var i = 0; i < expenses.length; i++) {
+            if (expenses[i].id === expenseId) { expense = expenses[i]; break; }
+        }
+        if (!expense) { showToast('❌ المصروف غير موجود'); return; }
+
+        var dateStr = expense.date ? expense.date.split('T')[0] : new Date().toISOString().split('T')[0];
+        openModal(`
+            <h3>✏️ تعديل مصروف</h3>
+            <input type="text" id="editExpenseDesc" placeholder="الوصف *" value="${expense.description || ''}">
+            <input type="number" id="editExpenseAmount" placeholder="المبلغ *" value="${expense.amount || 0}">
+            <input type="text" id="editExpenseCategory" placeholder="التصنيف" value="${expense.category || ''}">
+            <input type="date" id="editExpenseDate" value="${dateStr}">
+            <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="updateExpense(${expenseId})">
+                <i class="fa-solid fa-save"></i> تحديث
+            </button>
+        `);
+    });
+}
+
+function updateExpense(expenseId) {
+    var desc = document.getElementById('editExpenseDesc').value.trim();
+    var amount = parseFloat(document.getElementById('editExpenseAmount').value);
+    var category = document.getElementById('editExpenseCategory').value.trim();
+    var expenseDate = document.getElementById('editExpenseDate').value || new Date().toISOString().split('T')[0];
+
+    if (!desc || !amount || amount <= 0) { showToast('⚠️ الوصف والمبلغ مطلوبان'); return; }
+
+    getAll('expenses').then(function(expenses) {
+        var expense = null;
+        for (var i = 0; i < expenses.length; i++) {
+            if (expenses[i].id === expenseId) { expense = expenses[i]; break; }
+        }
+        if (!expense) { showToast('❌ المصروف غير موجود'); return; }
+
+        expense.description = desc;
+        expense.amount = amount;
+        expense.category = category || 'عام';
+        expense.date = new Date(expenseDate + 'T00:00:00').toISOString();
+        return updateIn('expenses', expense);
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تحديث المصروف');
+        loadExpensesTab();
+        if (document.getElementById('t-money').classList.contains('active')) loadMoneyTab();
+    }).catch(function(error) {
+        console.error('Error updating expense:', error);
+        showToast('❌ حدث خطأ في التحديث');
+    });
+}
+
+function deleteExpense(expenseId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذا المصروف؟')) return;
+    deleteFrom('expenses', expenseId).then(function() {
+        showToast('🗑️ تم حذف المصروف');
+        loadExpensesTab();
+        if (document.getElementById('t-money').classList.contains('active')) loadMoneyTab();
+    }).catch(function(error) {
+        console.error('Error deleting expense:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
+}
+
+function exportExpensesToCSV() {
+    getAll('expenses').then(function(expenses) {
+        if (expenses.length === 0) { showToast('📭 لا توجد بيانات للتصدير'); return; }
+        var csv = 'الوصف,المبلغ,التصنيف,التاريخ\n';
+        for (var i = 0; i < expenses.length; i++) {
+            var e = expenses[i];
+            csv += '"' + (e.description || '') + '",' + (e.amount || 0) + ',"' + (e.category || '') + '","' + (e.date || '') + '"\n';
+        }
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'مصاريف_وسام_' + new Date().toISOString().split('T')[0] + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم التصدير');
+    }).catch(function(error) {
+        console.error('Error exporting expenses:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+// ============================================================
+// 9. المرتجعات والديون (مختصرة)
+// ============================================================
 function loadReturnsTab() {
     var container = document.getElementById('t-returns');
     if (!container) return;
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-rotate-left"></i> المرتجعات</h3><p class="empty-state">✅ المرتجعات تعمل!</p></div>`;
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-rotate-left"></i> المرتجعات</h3>
+            <div id="returnsHistory"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    getAll('returns').then(function(returns) {
+        var list = document.getElementById('returnsHistory');
+        if (!list) return;
+        if (returns.length === 0) { list.innerHTML = '<p class="empty-state">📭 لا توجد مرتجعات</p>'; return; }
+        returns.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        var html = '';
+        var maxItems = Math.min(returns.length, 20);
+        for (var i = 0; i < maxItems; i++) {
+            var r = returns[i];
+            html += `
+                <div style="padding:6px 0;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span style="font-weight:700">${r.total} ل.س</span>
+                        <span class="badge badge-warning">فاتورة #${r.saleId}</span>
+                        <div class="text-muted">${r.reason || 'بدون سبب'}</div>
+                        <div class="text-muted">${formatDate(r.date)}</div>
+                    </div>
+                    <button class="btn btn-sm btn-danger" onclick="deleteReturn(${r.id})"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            `;
+        }
+        list.innerHTML = html;
+    });
+}
+
+function deleteReturn(returnId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذا المرتجع؟')) return;
+    deleteFrom('returns', returnId).then(function() {
+        showToast('🗑️ تم حذف المرتجع');
+        loadReturnsTab();
+    }).catch(function(error) {
+        console.error('Error deleting return:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
 }
 
 function loadDebtsTab() {
     var container = document.getElementById('t-debts');
     if (!container) return;
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-hand-holding-dollar"></i> الديون</h3><p class="empty-state">✅ الديون تعمل!</p></div>`;
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-hand-holding-dollar"></i> الديون</h3>
+            <div class="flex mb-8">
+                <select id="debtFilter" onchange="loadDebtsList()" style="flex:1;margin-bottom:0">
+                    <option value="all">الكل</option>
+                    <option value="pending" selected>معلقة</option>
+                    <option value="settled">مسددة</option>
+                </select>
+                <button class="btn btn-sm btn-primary" onclick="showNewDebtForm()"><i class="fa-solid fa-plus"></i></button>
+            </div>
+            <div id="debtsList"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    loadDebtsList();
 }
 
-function loadRepairTab() {
-    var container = document.getElementById('t-repair');
+function loadDebtsList() {
+    var filter = document.getElementById('debtFilter') ? document.getElementById('debtFilter').value : 'pending';
+    var container = document.getElementById('debtsList');
     if (!container) return;
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-screwdriver-wrench"></i> الصيانة</h3><p class="empty-state">✅ الصيانة تعمل!</p></div>`;
+
+    getAll('debts').then(function(debts) {
+        if (filter !== 'all') debts = debts.filter(function(d) { return d.status === filter; });
+        debts.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        if (debts.length === 0) { container.innerHTML = '<p class="empty-state">📭 لا توجد ديون</p>'; return; }
+
+        var html = '';
+        for (var j = 0; j < debts.length; j++) {
+            var d = debts[j];
+            var statusColor = d.status === 'settled' ? '#4CAF50' : '#F44336';
+            var statusText = d.status === 'settled' ? '✅ مسددة' : '⏳ معلقة';
+            html += `
+                <div style="padding:10px;border:1px solid #EEE;border-radius:8px;margin-top:8px">
+                    <div style="display:flex;justify-content:space-between">
+                        <strong>${d.customerName || 'زبون'}</strong>
+                        <span class="badge" style="background:${statusColor};color:#FFF">${statusText}</span>
+                    </div>
+                    <div style="font-size:13px;margin-top:4px">
+                        <span>الإجمالي: ${d.total} ل.س</span>
+                        <span style="margin-right:12px">المتبقي: <strong>${d.remaining || 0}</strong> ل.س</span>
+                    </div>
+                    <div class="text-muted">${formatDate(d.date)}</div>
+                    ${d.status === 'pending' ? `
+                        <button class="btn btn-sm btn-success mt-8" onclick="showPayDebtModal(${d.id})">
+                            <i class="fa-solid fa-hand-holding-dollar"></i> تسديد
+                        </button>
+                    ` : ''}
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading debts:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
 }
 
+function showNewDebtForm() {
+    openModal(`
+        <h3>📋 إضافة دين</h3>
+        <input type="text" id="newDebtCustomer" placeholder="اسم الزبون *">
+        <input type="number" id="newDebtAmount" placeholder="المبلغ *">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveNewDebt()">
+            <i class="fa-solid fa-save"></i> حفظ
+        </button>
+    `);
+}
+
+function saveNewDebt() {
+    var customer = document.getElementById('newDebtCustomer').value.trim();
+    var amount = parseFloat(document.getElementById('newDebtAmount').value);
+    if (!customer || !amount || amount <= 0) { showToast('⚠️ اسم الزبون والمبلغ مطلوبان'); return; }
+
+    addTo('debts', {
+        customerName: customer, total: amount, paid: 0, remaining: amount,
+        status: 'pending', date: new Date().toISOString()
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم إضافة دين للزبون ' + customer);
+        loadDebtsList();
+    }).catch(function(error) {
+        console.error('Error saving debt:', error);
+        showToast('❌ حدث خطأ في الحفظ');
+    });
+}
+
+function showPayDebtModal(debtId) {
+    getAll('debts').then(function(debts) {
+        var debt = null;
+        for (var i = 0; i < debts.length; i++) {
+            if (debts[i].id === debtId) { debt = debts[i]; break; }
+        }
+        if (!debt) { showToast('❌ الدين غير موجود'); return; }
+        openModal(`
+            <h3>💰 تسديد دين</h3>
+            <p><strong>${debt.customerName}</strong></p>
+            <p>المتبقي: <strong>${debt.remaining}</strong> ل.س</p>
+            <input type="number" id="payAmount" placeholder="المبلغ المدفوع" value="${debt.remaining}">
+            <button class="btn btn-success" style="width:100%;justify-content:center" onclick="payDebt(${debtId})">
+                <i class="fa-solid fa-check"></i> تأكيد التسديد
+            </button>
+        `);
+    });
+}
+
+function payDebt(debtId) {
+    var amount = parseFloat(document.getElementById('payAmount').value);
+    if (!amount || amount <= 0) { showToast('⚠️ أدخل مبلغ صحيح'); return; }
+
+    getAll('debts').then(function(debts) {
+        var debt = null;
+        for (var i = 0; i < debts.length; i++) {
+            if (debts[i].id === debtId) { debt = debts[i]; break; }
+        }
+        if (!debt) { showToast('❌ الدين غير موجود'); return; }
+        if (amount > debt.remaining) { showToast('⚠️ المبلغ أكبر من المتبقي'); return; }
+
+        debt.paid = (debt.paid || 0) + amount;
+        debt.remaining = debt.total - debt.paid;
+        if (debt.remaining <= 0) { debt.remaining = 0; debt.status = 'settled'; }
+        return updateIn('debts', debt);
+    }).then(function() {
+        return addTo('cash_flow', {
+            type: 'income', category: 'تسديد دين', amount: amount,
+            description: 'تسديد دين', date: new Date().toISOString()
+        });
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تسديد ' + amount + ' ل.س');
+        loadDebtsList();
+        if (document.getElementById('t-money').classList.contains('active')) loadMoneyTab();
+    }).catch(function(error) {
+        console.error('Error paying debt:', error);
+        showToast('❌ حدث خطأ في التسديد');
+    });
+}
+
+// ============================================================
+// 10. الصيانة (مع زر واتساب)
+// ============================================================
+function loadRepairTab() {
+    console.log('🔧 تحميل الصيانة...');
+    var container = document.getElementById('t-repair');
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-screwdriver-wrench"></i> صيانة جديدة</h3>
+            <div class="grid-2">
+                <input type="text" id="repairCustomer" placeholder="اسم الزبون *">
+                <input type="text" id="repairPhone" placeholder="الهاتف">
+            </div>
+            <input type="text" id="repairDevice" placeholder="نوع الجهاز *">
+            <input type="text" id="repairSerial" placeholder="الرقم التسلسلي">
+            <input type="text" id="repairBarcode" placeholder="باركود الجهاز (MT-xxxx)">
+            <textarea id="repairProblem" placeholder="المشكلة..."></textarea>
+            
+            <h4 style="margin-top:10px">🔧 قطع الغيار</h4>
+            <div class="flex">
+                <input type="text" id="repairPartSearch" placeholder="🔍 بحث بالباركود..." class="flex-1" oninput="searchPartByBarcodeForRepair()">
+                <input type="text" id="repairPartNameSearch" placeholder="🔍 بحث بالاسم..." class="flex-1" oninput="searchPartsForRepair()">
+            </div>
+            <div id="repairPartResults" style="max-height:120px;overflow-y:auto"></div>
+            <div id="repairPartsList"><p class="empty-state">لا قطع</p></div>
+            
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px;margin-top:8px">
+                <div class="flex"><span>تكلفة القطع: <strong id="repairPartsCost">0</strong> ل.س</span></div>
+                <div class="flex">
+                    <span style="flex:1">أجرة يد: <input type="number" id="repairLabor" value="0" style="width:80px;display:inline" oninput="updateRepairTotal()"></span>
+                    <span style="flex:1">حسم: <input type="number" id="repairDiscount" value="0" style="width:80px;display:inline" oninput="updateRepairTotal()"></span>
+                </div>
+                <div style="font-size:18px;font-weight:700">الإجمالي: <span id="repairTotal" style="color:#4CAF50">0</span> ل.س</div>
+            </div>
+            
+            <div class="flex">
+                <select id="repairPayment" style="flex:1;margin-bottom:0" onchange="toggleRepairPaymentFields()">
+                    <option value="cash">نقدي</option>
+                    <option value="debt">آجل</option>
+                    <option value="partial">جزئي</option>
+                </select>
+                <select id="repairStatus" style="flex:1;margin-bottom:0">
+                    <option value="in_repair">🔧 في الصيانة</option>
+                    <option value="waiting">⏳ قيد الانتظار</option>
+                    <option value="fixed">✅ تم الإصلاح</option>
+                </select>
+            </div>
+            <div id="repairPaymentFields" style="display:none">
+                <input type="number" id="repairPaid" placeholder="المبلغ المدفوع" value="0" oninput="updateRepairTotal()">
+                <div>المتبقي: <strong id="repairRemaining">0</strong> ل.س</div>
+            </div>
+            
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="saveRepair()">
+                <i class="fa-solid fa-save"></i> حفظ الصيانة
+            </button>
+        </div>
+        
+        <div class="card">
+            <h3>📋 قائمة الصيانات</h3>
+            <div class="flex">
+                <select id="repairFilter" style="flex:1;margin-bottom:0" onchange="loadRepairsList()">
+                    <option value="all">الكل</option>
+                    <option value="in_repair">في الصيانة</option>
+                    <option value="waiting">قيد الانتظار</option>
+                    <option value="fixed">تم الإصلاح</option>
+                </select>
+                <input type="text" id="repairSearch" placeholder="🔍 بحث..." style="flex:1;margin-bottom:0" oninput="loadRepairsList()">
+            </div>
+            <div id="repairsList"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    temporaryData.repairParts = [];
+    updateRepairPartsDisplay();
+    updateRepairTotal();
+    loadRepairsList();
+}
+
+function searchPartByBarcodeForRepair() {
+    var input = document.getElementById('repairPartSearch');
+    var container = document.getElementById('repairPartResults');
+    if (!input || !container) return;
+    var barcode = input.value.trim();
+    if (barcode.length < 2) { container.innerHTML = ''; return; }
+
+    getAll('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (p.barcode && p.barcode.toLowerCase().indexOf(barcode.toLowerCase()) !== -1) results.push(p);
+        }
+        if (results.length === 0) { container.innerHTML = '<p class="empty-state">❌ لا توجد قطع</p>'; return; }
+        if (results.length === 1 && results[0].barcode.toLowerCase() === barcode.toLowerCase()) {
+            addPartToRepair(results[0]);
+            input.value = '';
+            container.innerHTML = '<p style="color:#4CAF50">✅ تم إضافة ' + results[0].name + '</p>';
+            return;
+        }
+        var html = '';
+        var maxResults = Math.min(results.length, 5);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            html += `<div style="cursor:pointer;padding:6px;background:#F5F5F5;border-radius:4px;margin-bottom:4px" 
+                     onclick="addPartToRepair({id:${p.id}, name:'${p.name}', sellPrice:${p.sellPrice}, quantity:${p.quantity}})">
+                    ${p.name} | ${p.barcode} | ${p.sellPrice} ل.س
+                </div>`;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) { console.error('Error searching by barcode:', error); });
+}
+
+function searchPartsForRepair() {
+    var input = document.getElementById('repairPartNameSearch');
+    var container = document.getElementById('repairPartResults');
+    if (!input || !container) return;
+    var query = input.value.toLowerCase().trim();
+    if (query.length < 2) { container.innerHTML = ''; return; }
+
+    getAll('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (p.name && p.name.toLowerCase().indexOf(query) !== -1) results.push(p);
+        }
+        if (results.length === 0) { container.innerHTML = '<p class="empty-state">❌ لا توجد نتائج</p>'; return; }
+        var html = '';
+        var maxResults = Math.min(results.length, 8);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            html += `<div style="cursor:pointer;padding:6px;background:#F5F5F5;border-radius:4px;margin-bottom:4px" 
+                     onclick="addPartToRepair({id:${p.id}, name:'${p.name}', sellPrice:${p.sellPrice}, quantity:${p.quantity}})">
+                    ${p.name} | ${p.sellPrice} ل.س
+                </div>`;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) { console.error('Error searching parts:', error); });
+}
+
+function addPartToRepair(part) {
+    if (part.quantity <= 0) { showToast('⚠️ هذه القطعة غير متوفرة'); return; }
+
+    var existing = null;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        if (temporaryData.repairParts[i].partId === part.id) { existing = temporaryData.repairParts[i]; break; }
+    }
+    if (existing) {
+        if (existing.quantity < part.quantity) { existing.quantity++; }
+        else { showToast('⚠️ الكمية المطلوبة غير متوفرة'); return; }
+    } else {
+        temporaryData.repairParts.push({ partId: part.id, name: part.name, price: part.sellPrice, quantity: 1 });
+    }
+    updateRepairPartsDisplay();
+    updateRepairTotal();
+    document.getElementById('repairPartResults').innerHTML = '';
+    document.getElementById('repairPartNameSearch').value = '';
+    document.getElementById('repairPartSearch').value = '';
+    showToast('✅ تم إضافة ' + part.name);
+}
+
+function updateRepairPartsDisplay() {
+    var container = document.getElementById('repairPartsList');
+    if (!container) return;
+    if (temporaryData.repairParts.length === 0) {
+        container.innerHTML = '<p class="empty-state">لا قطع</p>';
+        document.getElementById('repairPartsCost').textContent = '0';
+        return;
+    }
+
+    var html = '';
+    var total = 0;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        var item = temporaryData.repairParts[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        html += `
+            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #EEE">
+                <span>${item.name} ×${item.quantity}</span>
+                <span>${subtotal} ل.س 
+                    <button class="btn btn-sm btn-danger" onclick="removeRepairPart(${i})">✕</button>
+                </span>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    document.getElementById('repairPartsCost').textContent = total;
+}
+
+function removeRepairPart(index) {
+    if (index >= 0 && index < temporaryData.repairParts.length) {
+        temporaryData.repairParts.splice(index, 1);
+        updateRepairPartsDisplay();
+        updateRepairTotal();
+    }
+}
+
+function updateRepairTotal() {
+    var partsTotal = 0;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        partsTotal += temporaryData.repairParts[i].price * temporaryData.repairParts[i].quantity;
+    }
+
+    var labor = parseFloat(document.getElementById('repairLabor') ? document.getElementById('repairLabor').value : 0) || 0;
+    var discount = parseFloat(document.getElementById('repairDiscount') ? document.getElementById('repairDiscount').value : 0) || 0;
+    var total = Math.max(0, partsTotal + labor - discount);
+
+    var totalEl = document.getElementById('repairTotal');
+    if (totalEl) totalEl.textContent = total;
+
+    var paid = parseFloat(document.getElementById('repairPaid') ? document.getElementById('repairPaid').value : 0) || 0;
+    var remaining = Math.max(0, total - paid);
+    var remainingEl = document.getElementById('repairRemaining');
+    if (remainingEl) remainingEl.textContent = remaining;
+}
+
+function toggleRepairPaymentFields() {
+    var payment = document.getElementById('repairPayment') ? document.getElementById('repairPayment').value : 'cash';
+    var fields = document.getElementById('repairPaymentFields');
+    if (fields) fields.style.display = (payment === 'partial') ? 'block' : 'none';
+}
+
+function generateRepairBarcode() {
+    return getAll('repairs').then(function(repairs) {
+        var maxNum = 0;
+        for (var i = 0; i < repairs.length; i++) {
+            var r = repairs[i];
+            if (r.deviceBarcode && r.deviceBarcode.indexOf('MT-') === 0) {
+                var num = parseInt(r.deviceBarcode.replace('MT-', ''));
+                if (!isNaN(num) && num > maxNum) maxNum = num;
+            }
+        }
+        return 'MT-' + String(maxNum + 1).padStart(4, '0');
+    });
+}
+
+function saveRepair() {
+    var customer = document.getElementById('repairCustomer').value.trim();
+    var device = document.getElementById('repairDevice').value.trim();
+    var barcode = document.getElementById('repairBarcode').value.trim();
+
+    if (!customer || !device) { showToast('⚠️ اسم الزبون ونوع الجهاز مطلوبان'); return; }
+
+    var partsTotal = 0;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        partsTotal += temporaryData.repairParts[i].price * temporaryData.repairParts[i].quantity;
+    }
+    var labor = parseFloat(document.getElementById('repairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('repairDiscount').value) || 0;
+    var total = Math.max(0, partsTotal + labor - discount);
+    var paymentType = document.getElementById('repairPayment').value;
+    var paid = paymentType === 'partial' ? (parseFloat(document.getElementById('repairPaid').value) || 0) : 
+               paymentType === 'cash' ? total : 0;
+
+    var saveRepairData = function(finalBarcode) {
+        return addTo('repairs', {
+            customerName: customer, phone: document.getElementById('repairPhone').value.trim() || '',
+            deviceType: device, serialNumber: document.getElementById('repairSerial').value.trim() || '',
+            deviceBarcode: finalBarcode, problem: document.getElementById('repairProblem').value.trim() || '',
+            parts: JSON.parse(JSON.stringify(temporaryData.repairParts)), partsCost: partsTotal,
+            laborCost: labor, discount: discount, total: total, paid: paid,
+            remaining: Math.max(0, total - paid), paymentType: paymentType,
+            status: document.getElementById('repairStatus').value || 'in_repair',
+            date: new Date().toISOString(), isReceived: false, receivedDate: null
+        });
+    };
+
+    var barcodePromise = barcode ? Promise.resolve(barcode) : generateRepairBarcode();
+
+    barcodePromise.then(function(finalBarcode) {
+        return saveRepairData(finalBarcode);
+    }).then(function(repairId) {
+        if (paymentType === 'cash' && total > 0) {
+            return addTo('cash_flow', {
+                type: 'income', category: 'صيانة', amount: total,
+                description: 'صيانة ' + device + ' - ' + customer,
+                date: new Date().toISOString()
+            });
+        }
+    }).then(function() {
+        return getAll('parts');
+    }).then(function(parts) {
+        var promises = [];
+        for (var j = 0; j < temporaryData.repairParts.length; j++) {
+            var p = temporaryData.repairParts[j];
+            for (var k = 0; k < parts.length; k++) {
+                if (parts[k].id === p.partId) {
+                    parts[k].quantity = Math.max(0, parts[k].quantity - p.quantity);
+                    promises.push(updateIn('parts', parts[k]));
+                    break;
+                }
+            }
+        }
+        return Promise.all(promises);
+    }).then(function() {
+        temporaryData.repairParts = [];
+        updateRepairPartsDisplay();
+        updateRepairTotal();
+        document.getElementById('repairCustomer').value = '';
+        document.getElementById('repairPhone').value = '';
+        document.getElementById('repairDevice').value = '';
+        document.getElementById('repairSerial').value = '';
+        document.getElementById('repairBarcode').value = '';
+        document.getElementById('repairProblem').value = '';
+        document.getElementById('repairLabor').value = '0';
+        document.getElementById('repairDiscount').value = '0';
+        document.getElementById('repairPaid').value = '0';
+        showToast('✅ تم حفظ الصيانة');
+        loadRepairsList();
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error saving repair:', error);
+        showToast('❌ حدث خطأ في حفظ الصيانة');
+    });
+}
+
+// ============================================================
+// دوال الصيانة (تعديل/حذف/واتساب)
+// ============================================================
+function editRepair(repairId) {
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+        if (repair.isReceived) { showToast('⚠️ لا يمكن تعديل صيانة تم استلامها'); return; }
+
+        var isReceived = repair.isReceived ? 'checked' : '';
+        openModal(`
+            <h3>✏️ تعديل الصيانة</h3>
+            <p style="font-size:12px;color:#666">تعديل بيانات الصيانة #${repair.id}</p>
+            <div class="grid-2">
+                <input type="text" id="editRepairCustomer" placeholder="اسم الزبون *" value="${repair.customerName || ''}">
+                <input type="text" id="editRepairPhone" placeholder="الهاتف" value="${repair.phone || ''}">
+            </div>
+            <div class="grid-2">
+                <input type="text" id="editRepairDevice" placeholder="نوع الجهاز *" value="${repair.deviceType || ''}">
+                <input type="text" id="editRepairSerial" placeholder="الرقم التسلسلي" value="${repair.serialNumber || ''}">
+            </div>
+            <input type="text" id="editRepairBarcode" placeholder="باركود الجهاز" value="${repair.deviceBarcode || ''}">
+            <textarea id="editRepairProblem" placeholder="المشكلة..." rows="2">${repair.problem || ''}</textarea>
+            
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px;margin:8px 0">
+                <div class="grid-2">
+                    <div><label>تكلفة القطع: <strong>${repair.partsCost || 0}</strong> ل.س</label></div>
+                    <div><label>أجرة يد: <input type="number" id="editRepairLabor" value="${repair.laborCost || 0}" style="width:70px;display:inline" oninput="updateEditRepairTotal()"></label></div>
+                </div>
+                <div class="grid-2">
+                    <div><label>حسم: <input type="number" id="editRepairDiscount" value="${repair.discount || 0}" style="width:70px;display:inline" oninput="updateEditRepairTotal()"></label></div>
+                    <div><label>الإجمالي: <strong id="editRepairTotalDisplay">${repair.total || 0}</strong> ل.س</label></div>
+                </div>
+            </div>
+            
+            <div class="grid-2">
+                <select id="editRepairPayment">
+                    <option value="cash" ${repair.paymentType === 'cash' ? 'selected' : ''}>نقدي</option>
+                    <option value="debt" ${repair.paymentType === 'debt' ? 'selected' : ''}>آجل</option>
+                    <option value="partial" ${repair.paymentType === 'partial' ? 'selected' : ''}>جزئي</option>
+                </select>
+                <select id="editRepairStatus">
+                    <option value="in_repair" ${repair.status === 'in_repair' ? 'selected' : ''}>🔧 في الصيانة</option>
+                    <option value="waiting" ${repair.status === 'waiting' ? 'selected' : ''}>⏳ قيد الانتظار</option>
+                    <option value="fixed" ${repair.status === 'fixed' ? 'selected' : ''}>✅ تم الإصلاح</option>
+                </select>
+            </div>
+            
+            <div style="margin:8px 0;padding:10px;background:#E3F2FD;border-radius:8px">
+                <label style="display:flex;align-items:center;gap:10px;font-weight:700;cursor:pointer">
+                    <input type="checkbox" id="editRepairReceived" ${isReceived} style="width:20px;height:20px;cursor:pointer">
+                    <span>📦 الزبون استلم الجهاز</span>
+                </label>
+                ${repair.isReceived ? '<div style="font-size:12px;color:#4CAF50;margin-top:4px">✅ تم استلام الجهاز بتاريخ ' + formatDate(repair.receivedDate) + '</div>' : ''}
+            </div>
+            
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="updateRepairData(${repairId})">
+                <i class="fa-solid fa-save"></i> تحديث البيانات
+            </button>
+        `);
+    }).catch(function(error) {
+        console.error('Error loading repair for edit:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function updateEditRepairTotal() {
+    var labor = parseFloat(document.getElementById('editRepairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('editRepairDiscount').value) || 0;
+    var partsCost = 0;
+    var partsLabel = document.querySelector('#editRepairTotalDisplay')?.parentElement?.parentElement?.previousElementSibling?.querySelector('strong');
+    if (partsLabel) partsCost = parseFloat(partsLabel.textContent) || 0;
+    var total = Math.max(0, partsCost + labor - discount);
+    document.getElementById('editRepairTotalDisplay').textContent = total;
+}
+
+function updateRepairData(repairId) {
+    var customer = document.getElementById('editRepairCustomer').value.trim();
+    var device = document.getElementById('editRepairDevice').value.trim();
+    if (!customer || !device) { showToast('⚠️ اسم الزبون ونوع الجهاز مطلوبان'); return; }
+
+    var labor = parseFloat(document.getElementById('editRepairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('editRepairDiscount').value) || 0;
+    var total = parseFloat(document.getElementById('editRepairTotalDisplay').textContent) || 0;
+    var isReceived = document.getElementById('editRepairReceived').checked;
+
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+
+        repair.customerName = customer;
+        repair.phone = document.getElementById('editRepairPhone').value.trim() || '';
+        repair.deviceType = device;
+        repair.serialNumber = document.getElementById('editRepairSerial').value.trim() || '';
+        repair.deviceBarcode = document.getElementById('editRepairBarcode').value.trim() || repair.deviceBarcode || '';
+        repair.problem = document.getElementById('editRepairProblem').value.trim() || '';
+        repair.laborCost = labor;
+        repair.discount = discount;
+        repair.total = total;
+        repair.remaining = Math.max(0, total - (repair.paid || 0));
+        repair.paymentType = document.getElementById('editRepairPayment').value;
+        repair.status = document.getElementById('editRepairStatus').value;
+        repair.isReceived = isReceived;
+        repair.receivedDate = isReceived ? (repair.receivedDate || new Date().toISOString()) : null;
+        return updateIn('repairs', repair);
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تحديث الصيانة');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error updating repair:', error);
+        showToast('❌ حدث خطأ في التحديث');
+    });
+}
+
+function deleteRepair(repairId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذه الصيانة؟')) return;
+    
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+
+        if (repair.parts && repair.parts.length > 0) {
+            return getAll('parts').then(function(parts) {
+                var promises = [];
+                for (var j = 0; j < repair.parts.length; j++) {
+                    var p = repair.parts[j];
+                    for (var k = 0; k < parts.length; k++) {
+                        if (parts[k].id === p.partId) {
+                            parts[k].quantity = (parts[k].quantity || 0) + p.quantity;
+                            promises.push(updateIn('parts', parts[k]));
+                            break;
+                        }
+                    }
+                }
+                return Promise.all(promises);
+            }).then(function() {
+                return deleteFrom('repairs', repairId);
+            });
+        } else {
+            return deleteFrom('repairs', repairId);
+        }
+    }).then(function() {
+        showToast('🗑️ تم حذف الصيانة وإعادة القطع للمخزن');
+        loadRepairsList();
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error deleting repair:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
+}
+
+function toggleRepairReceived(repairId) {
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+        repair.isReceived = !repair.isReceived;
+        repair.receivedDate = repair.isReceived ? new Date().toISOString() : null;
+        return updateIn('repairs', repair);
+    }).then(function() {
+        showToast('✅ تم تحديث حالة الاستلام');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error toggling received status:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function sendWhatsAppReady(repairId) {
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+
+        return Promise.all([
+            getSetting('shopName', 'مركز وسام للإلكترونيات'),
+            getSetting('shopAddress', 'ريف دمشق - مخيم السيدة زينب'),
+            getSetting('shopPhone1', '0937572101'),
+            getSetting('shopPhone2', '0956562865')
+        ]).then(function(settings) {
+            var shopName = settings[0], shopAddress = settings[1], phone1 = settings[2], phone2 = settings[3];
+            var customerName = repair.customerName || 'الزبون';
+            var deviceType = repair.deviceType || 'الجهاز';
+            var serialNumber = repair.serialNumber || 'غير محدد';
+            var total = repair.total || 0;
+            var dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '‏/');
+            var formattedTotal = total.toLocaleString('ar-EG');
+
+            var message = `مرحباً هنا ${customerName} 🌷
+
+📢 إشعار من ${shopName}
+
+يسرنا إعلامكم بأن جهازكم جاهز للتسليم:
+🔹 النوع: ${deviceType}
+🔹 الرقم التسلسلي: ${serialNumber}
+💰 التكلفة الكاملة: ${formattedTotal} ل.س
+📅 تاريخ الإرسال: ${dateStr}
+
+الرجاء الحضور لاستلامه خلال 3 أيام 🕒
+
+📍 العنوان: ${shopAddress}
+📞 للتواصل: ${phone1} / ${phone2}
+ 
+نشكر ثقتكم بنا، ودمتم بخير 🌹`;
+
+            var phoneNumber = repair.phone || '';
+            var url = 'https://wa.me/' + (phoneNumber ? phoneNumber : '') + '?text=' + encodeURIComponent(message);
+            window.open(url, '_blank');
+        });
+    }).catch(function(error) {
+        console.error('Error sending WhatsApp:', error);
+        showToast('❌ حدث خطأ في إرسال واتساب');
+    });
+}
+
+function loadRepairsList() {
+    var container = document.getElementById('repairsList');
+    if (!container) return;
+
+    var filter = document.getElementById('repairFilter') ? document.getElementById('repairFilter').value : 'all';
+    var search = document.getElementById('repairSearch') ? document.getElementById('repairSearch').value.toLowerCase().trim() : '';
+
+    getAll('repairs').then(function(repairs) {
+        if (filter !== 'all') repairs = repairs.filter(function(r) { return r.status === filter; });
+        if (search) {
+            repairs = repairs.filter(function(r) {
+                return (r.customerName && r.customerName.toLowerCase().indexOf(search) !== -1) ||
+                       (r.deviceType && r.deviceType.toLowerCase().indexOf(search) !== -1) ||
+                       (r.deviceBarcode && r.deviceBarcode.toLowerCase().indexOf(search) !== -1);
+            });
+        }
+        repairs.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+        if (repairs.length === 0) { container.innerHTML = '<p class="empty-state">📭 لا توجد صيانات</p>'; return; }
+
+        var statusMap = {
+            'in_repair': { label: '🔧 في الصيانة', color: '#FF9800' },
+            'waiting': { label: '⏳ قيد الانتظار', color: '#2196F3' },
+            'fixed': { label: '✅ تم الإصلاح', color: '#4CAF50' }
+        };
+
+        var html = '';
+        var maxItems = Math.min(repairs.length, 30);
+        for (var i = 0; i < maxItems; i++) {
+            var r = repairs[i];
+            var status = statusMap[r.status] || statusMap['in_repair'];
+            var receivedStatus = r.isReceived ? 
+                '<span class="badge" style="background:#4CAF50;color:#FFF">📦 تم الاستلام</span>' : 
+                '<span class="badge" style="background:#FF9800;color:#FFF">⏳ لم يستلم</span>';
+            
+            var whatsappBtn = '';
+            if (r.status === 'fixed' && !r.isReceived) {
+                whatsappBtn = `<button class="btn btn-sm whatsapp-btn" onclick="sendWhatsAppReady(${r.id})">
+                    <i class="fa-brands fa-whatsapp"></i> واتساب
+                </button>`;
+            }
+            
+            html += `
+                <div style="padding:10px;border:1px solid #EEE;border-radius:8px;margin-top:6px">
+                    <div style="display:flex;justify-content:space-between;flex-wrap:wrap">
+                        <div><strong>${r.deviceType}</strong><span class="text-muted"> - ${r.customerName}</span></div>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap">${receivedStatus}<span class="badge" style="background:${status.color};color:#FFF">${status.label}</span></div>
+                    </div>
+                    <div style="font-size:13px;margin-top:4px">
+                        <span>💰 ${r.total} ل.س</span>
+                        ${r.deviceBarcode ? '<span style="margin-right:12px">🏷️ ' + r.deviceBarcode + '</span>' : ''}
+                        ${r.remaining > 0 ? '<span style="margin-right:12px;color:#F44336">متبقي: ' + r.remaining + '</span>' : ''}
+                        ${r.receivedDate ? '<span style="margin-right:12px;color:#4CAF50">📅 ' + formatDate(r.receivedDate) + '</span>' : ''}
+                    </div>
+                    <div class="text-muted">${formatDate(r.date)}</div>
+                    <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
+                        ${r.deviceBarcode ? '<button class="btn btn-sm btn-warning" onclick="printBarcode(\'' + r.deviceBarcode + '\',\'صيانة ' + r.deviceType + '\')"><i class="fa-solid fa-print"></i></button>' : ''}
+                        ${whatsappBtn}
+                        <button class="btn btn-sm btn-success" onclick="editRepair(${r.id})" ${r.isReceived ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>
+                            <i class="fa-solid fa-pen"></i> تعديل
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteRepair(${r.id})"><i class="fa-solid fa-trash"></i> حذف</button>
+                        <button class="btn btn-sm ${r.isReceived ? 'btn-warning' : 'btn-primary'}" onclick="toggleRepairReceived(${r.id})">
+                            <i class="fa-solid fa-check-double"></i> ${r.isReceived ? 'إلغاء الاستلام' : 'تسجيل الاستلام'}
+                        </button>
+                        ${r.remaining > 0 ? '<button class="btn btn-sm btn-primary" onclick="payRepairDebt(' + r.id + ')"><i class="fa-solid fa-hand-holding-dollar"></i> تسديد</button>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading repairs:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function payRepairDebt(repairId) {
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+
+        openModal(`
+            <h3>💰 تسديد باقي الصيانة</h3>
+            <p><strong>${repair.customerName}</strong> - ${repair.deviceType}</p>
+            <p>المتبقي: <strong>${repair.remaining}</strong> ل.س</p>
+            <input type="number" id="repairPayAmount" placeholder="المبلغ" value="${repair.remaining}">
+            <button class="btn btn-success" style="width:100%;justify-content:center;margin-top:8px" onclick="processRepairPayment(${repairId})">
+                <i class="fa-solid fa-check"></i> تأكيد التسديد
+            </button>
+        `);
+    });
+}
+
+function processRepairPayment(repairId) {
+    var amount = parseFloat(document.getElementById('repairPayAmount').value);
+    if (!amount || amount <= 0) { showToast('⚠️ أدخل مبلغ صحيح'); return; }
+
+    getAll('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) { repair = repairs[i]; break; }
+        }
+        if (!repair) { showToast('❌ الصيانة غير موجودة'); return; }
+        if (amount > repair.remaining) { showToast('⚠️ المبلغ أكبر من المتبقي'); return; }
+
+        repair.paid = (repair.paid || 0) + amount;
+        repair.remaining = Math.max(0, repair.total - repair.paid);
+        return updateIn('repairs', repair);
+    }).then(function() {
+        return addTo('cash_flow', {
+            type: 'income', category: 'صيانة', amount: amount,
+            description: 'تسديد صيانة', date: new Date().toISOString()
+        });
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تسديد ' + amount + ' ل.س');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error processing repair payment:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+// ============================================================
+// 11. المال والتدفق النقدي
+// ============================================================
 function loadMoneyTab() {
     var container = document.getElementById('t-money');
-    if (!container) return;
     if (currentUser && currentUser.role === 'employee') {
-        container.innerHTML = '<p class="empty-state">⛔ غير مسموح</p>';
+        container.innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
         return;
     }
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-money-bill-wave"></i> المال</h3><p class="empty-state">✅ المال يعمل!</p></div>`;
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-money-bill-wave"></i> التدفق النقدي</h3>
+            <div class="grid-3">
+                <div class="stat-box" style="background:#E8F5E9"><div class="number" id="totalIncome">0</div><div class="label">إجمالي الإيرادات</div></div>
+                <div class="stat-box" style="background:#FFEBEE"><div class="number" id="totalExpense">0</div><div class="label">إجمالي المصاريف</div></div>
+                <div class="stat-box" style="background:#E3F2FD"><div class="number" id="netProfit">0</div><div class="label">صافي الربح</div></div>
+            </div>
+            <div class="flex mt-8">
+                <select id="cashFilter" style="flex:1;margin-bottom:0" onchange="loadCashFlow()">
+                    <option value="all">الكل</option>
+                    <option value="income">الإيرادات</option>
+                    <option value="expense">المصاريف</option>
+                </select>
+            </div>
+            <div id="cashFlowList" style="max-height:350px;overflow-y:auto;margin-top:8px">
+                <p class="empty-state">⏳ جاري التحميل...</p>
+            </div>
+        </div>
+        <div class="card">
+            <h3><i class="fa-solid fa-chart-pie"></i> ملخص المبيعات</h3>
+            <div id="salesSummary"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    loadCashFlow();
+    loadSalesSummary();
 }
 
-function loadExpensesTab() {
-    var container = document.getElementById('t-expenses');
+function loadCashFlow() {
+    var filter = document.getElementById('cashFilter') ? document.getElementById('cashFilter').value : 'all';
+    var container = document.getElementById('cashFlowList');
     if (!container) return;
-    if (currentUser && currentUser.role === 'employee') {
-        container.innerHTML = '<p class="empty-state">⛔ غير مسموح</p>';
-        return;
-    }
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-receipt"></i> المصاريف</h3><p class="empty-state">✅ المصاريف تعمل!</p></div>`;
+
+    Promise.all([getAll('cash_flow'), getAll('expenses')])
+    .then(function(results) {
+        var cashFlow = results[0] || [];
+        var expenses = results[1] || [];
+
+        var allItems = cashFlow.slice();
+        for (var i = 0; i < expenses.length; i++) {
+            var e = expenses[i];
+            var exists = false;
+            for (var j = 0; j < allItems.length; j++) {
+                if (allItems[j].description === e.description && 
+                    allItems[j].amount === e.amount &&
+                    allItems[j].date === e.date) { exists = true; break; }
+            }
+            if (!exists) {
+                allItems.push({ type: 'expense', category: 'مصروف', amount: e.amount, description: e.description, date: e.date });
+            }
+        }
+
+        if (filter !== 'all') allItems = allItems.filter(function(item) { return item.type === filter; });
+        allItems.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+        var totalIncome = 0, totalExpense = 0;
+        for (var k = 0; k < allItems.length; k++) {
+            if (allItems[k].type === 'income') totalIncome += allItems[k].amount;
+            else totalExpense += allItems[k].amount;
+        }
+
+        document.getElementById('totalIncome').textContent = totalIncome;
+        document.getElementById('totalExpense').textContent = totalExpense;
+        document.getElementById('netProfit').textContent = totalIncome - totalExpense;
+
+        if (allItems.length === 0) { container.innerHTML = '<p class="empty-state">📭 لا توجد حركات مالية</p>'; return; }
+
+        var html = '';
+        var maxItems = Math.min(allItems.length, 30);
+        for (var l = 0; l < maxItems; l++) {
+            var item = allItems[l];
+            var isIncome = item.type === 'income';
+            var bgColor = isIncome ? '#E8F5E9' : '#FFEBEE';
+            var icon = isIncome ? '📈' : '📉';
+            var sign = isIncome ? '+' : '-';
+            var color = isIncome ? '#2E7D32' : '#C62828';
+            html += `
+                <div style="padding:8px;border-bottom:1px solid #EEE;display:flex;justify-content:space-between;align-items:center;background:${bgColor};border-radius:4px;margin-bottom:4px">
+                    <div>
+                        <span>${icon} ${item.description || 'بدون وصف'}</span>
+                        ${item.category ? '<span class="badge badge-info">' + item.category + '</span>' : ''}
+                        <div class="text-muted">${formatDate(item.date)}</div>
+                    </div>
+                    <div style="font-weight:700;color:${color}">${sign} ${item.amount} ل.س</div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading cash flow:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
 }
 
+function loadSalesSummary() {
+    var container = document.getElementById('salesSummary');
+    if (!container) return;
+
+    Promise.all([getAll('sales'), getAll('returns')])
+    .then(function(results) {
+        var sales = results[0] || [];
+        var returns = results[1] || [];
+
+        var today = new Date().toISOString().split('T')[0];
+        var thisMonth = today.substring(0, 7);
+
+        var todaySales = sales.filter(function(s) { return s.date && s.date.split('T')[0] === today; });
+        var todayTotal = todaySales.reduce(function(sum, s) { return sum + (s.total || 0); }, 0);
+
+        var monthSales = sales.filter(function(s) { return s.date && s.date.substring(0, 7) === thisMonth; });
+        var monthTotal = monthSales.reduce(function(sum, s) { return sum + (s.total || 0); }, 0);
+
+        var totalReturns = returns.reduce(function(sum, r) { return sum + (r.total || 0); }, 0);
+
+        container.innerHTML = `
+            <div class="grid-3">
+                <div class="stat-box"><div class="number" style="color:#2196F3">${todayTotal}</div><div class="label">مبيعات اليوم</div></div>
+                <div class="stat-box"><div class="number" style="color:#4CAF50">${monthTotal}</div><div class="label">مبيعات الشهر</div></div>
+                <div class="stat-box"><div class="number" style="color:#FF9800">${totalReturns}</div><div class="label">إجمالي المرتجعات</div></div>
+            </div>
+            <div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px;color:#666">
+                <span>عدد الفواتير: ${sales.length}</span>
+                <span>متوسط الفاتورة: ${sales.length > 0 ? Math.round(monthTotal / sales.length) : 0} ل.س</span>
+            </div></div>
+        `;
+    }).catch(function(error) {
+        console.error('Error loading sales summary:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+// ============================================================
+// 12. التقارير
+// ============================================================
 function loadReportsTab() {
     var container = document.getElementById('t-reports');
-    if (!container) return;
     if (currentUser && currentUser.role === 'employee') {
-        container.innerHTML = '<p class="empty-state">⛔ غير مسموح</p>';
+        container.innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
         return;
     }
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-chart-bar"></i> التقارير</h3><p class="empty-state">✅ التقارير تعمل!</p></div>`;
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-chart-bar"></i> التقارير</h3>
+            <div class="flex mb-8">
+                <select id="reportType" style="flex:1;margin-bottom:0" onchange="loadReport()">
+                    <option value="daily">تقرير يومي</option>
+                    <option value="monthly">تقرير شهري</option>
+                    <option value="yearly">تقرير سنوي</option>
+                    <option value="inventory">تقرير المخزون</option>
+                </select>
+                <input type="date" id="reportDate" value="${new Date().toISOString().split('T')[0]}" style="flex:1;margin-bottom:0" onchange="loadReport()">
+            </div>
+            <div id="reportContent"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+        <div class="card">
+            <h3><i class="fa-solid fa-file-pdf"></i> تصدير</h3>
+            <div class="flex">
+                <button class="btn btn-sm btn-primary" onclick="exportReportToCSV()"><i class="fa-solid fa-file-csv"></i> CSV</button>
+                <button class="btn btn-sm btn-danger" onclick="window.print()"><i class="fa-solid fa-file-pdf"></i> طباعة</button>
+            </div>
+        </div>
+    `;
+    loadReport();
 }
 
+function loadReport() {
+    var type = document.getElementById('reportType').value;
+    var date = document.getElementById('reportDate').value;
+    var container = document.getElementById('reportContent');
+    if (!container) return;
+
+    Promise.all([getAll('sales'), getAll('expenses'), getAll('returns'), getAll('debts'), getAll('parts')])
+    .then(function(results) {
+        var sales = results[0] || [];
+        var expenses = results[1] || [];
+        var returns = results[2] || [];
+        var debts = results[3] || [];
+        var parts = results[4] || [];
+
+        var startDate, endDate;
+        if (type === 'daily') { startDate = date; endDate = date; }
+        else if (type === 'monthly') { startDate = date.substring(0, 7); endDate = date.substring(0, 7); }
+        else if (type === 'yearly') { startDate = date.substring(0, 4); endDate = date.substring(0, 4); }
+
+        var filteredSales = sales.filter(function(s) {
+            if (!s.date) return false;
+            if (type === 'daily') return s.date.split('T')[0] === startDate;
+            if (type === 'monthly') return s.date.substring(0, 7) === startDate;
+            if (type === 'yearly') return s.date.substring(0, 4) === startDate;
+            return true;
+        });
+
+        var filteredExpenses = expenses.filter(function(e) {
+            if (!e.date) return false;
+            if (type === 'daily') return e.date.split('T')[0] === startDate;
+            if (type === 'monthly') return e.date.substring(0, 7) === startDate;
+            if (type === 'yearly') return e.date.substring(0, 4) === startDate;
+            return true;
+        });
+
+        var filteredReturns = returns.filter(function(r) {
+            if (!r.date) return false;
+            if (type === 'daily') return r.date.split('T')[0] === startDate;
+            if (type === 'monthly') return r.date.substring(0, 7) === startDate;
+            if (type === 'yearly') return r.date.substring(0, 4) === startDate;
+            return true;
+        });
+
+        var totalSales = filteredSales.reduce(function(sum, s) { return sum + (s.total || 0); }, 0);
+        var totalExpenses = filteredExpenses.reduce(function(sum, e) { return sum + (e.amount || 0); }, 0);
+        var totalReturns = filteredReturns.reduce(function(sum, r) { return sum + (r.total || 0); }, 0);
+        var totalDebts = debts.filter(function(d) { return d.status === 'pending'; }).reduce(function(sum, d) { return sum + (d.remaining || 0); }, 0);
+
+        var periodText = { 'daily': 'يومي', 'monthly': 'شهري', 'yearly': 'سنوي', 'inventory': 'المخزون' }[type] || '';
+
+        if (type === 'inventory') {
+            var lowStock = parts.filter(function(p) { return p.quantity <= 5; });
+            var outStock = parts.filter(function(p) { return p.quantity <= 0; });
+            container.innerHTML = `
+                <div style="font-size:14px;font-weight:700;margin-bottom:8px">📦 تقرير المخزون</div>
+                <div class="grid-2">
+                    <div class="stat-box"><div class="number">${parts.length}</div><div class="label">إجمالي القطع</div></div>
+                    <div class="stat-box"><div class="number">${lowStock.length}</div><div class="label">مخزون منخفض (≤5)</div></div>
+                    <div class="stat-box" style="background:#FFEBEE"><div class="number">${outStock.length}</div><div class="label">نفذ من المخزون</div></div>
+                    <div class="stat-box"><div class="number">${parts.reduce(function(sum, p) { return sum + (p.quantity || 0); }, 0)}</div><div class="label">إجمالي القطع</div></div>
+                </div>
+                ${lowStock.length > 0 ? `
+                    <div style="margin-top:8px;background:#FFF3E0;padding:10px;border-radius:8px">
+                        <strong style="color:#E65100">⚠️ قطع منخفضة المخزون:</strong>
+                        ${lowStock.map(function(p) { return '<div>• ' + p.name + ' - ' + p.quantity + '</div>'; }).join('')}
+                    </div>
+                ` : ''}
+            `;
+        } else {
+            var netProfit = totalSales - totalExpenses - totalReturns;
+            container.innerHTML = `
+                <div style="font-size:14px;font-weight:700;margin-bottom:8px">📊 التقرير ${periodText} - ${formatDate(date)}</div>
+                <div class="grid-2">
+                    <div class="stat-box" style="background:#E8F5E9"><div class="number">${totalSales}</div><div class="label">إجمالي المبيعات</div></div>
+                    <div class="stat-box" style="background:#FFEBEE"><div class="number">${totalExpenses}</div><div class="label">إجمالي المصاريف</div></div>
+                    <div class="stat-box" style="background:#FFF3E0"><div class="number">${totalReturns}</div><div class="label">إجمالي المرتجعات</div></div>
+                    <div class="stat-box" style="background:#E3F2FD"><div class="number" style="color:${netProfit >= 0 ? '#4CAF50' : '#F44336'}">${netProfit}</div><div class="label">صافي الربح</div></div>
+                </div>
+                <div style="margin-top:8px;font-size:12px;color:#666">
+                    <div>📋 عدد الفواتير: ${filteredSales.length}</div>
+                    <div>💰 الديون المعلقة: ${totalDebts} ل.س</div>
+                </div>
+            `;
+        }
+    }).catch(function(error) {
+        console.error('Error loading report:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ في تحميل التقرير</p>';
+    });
+}
+
+function exportReportToCSV() {
+    var type = document.getElementById('reportType').value;
+    var date = document.getElementById('reportDate').value;
+    
+    Promise.all([getAll('sales'), getAll('expenses'), getAll('returns'), getAll('parts')])
+    .then(function(results) {
+        var sales = results[0] || [], expenses = results[1] || [], returns = results[2] || [], parts = results[3] || [];
+        var csv = 'نوع التقرير: ' + type + ', التاريخ: ' + date + '\n\n';
+        
+        if (type === 'inventory') {
+            csv += 'الاسم,الباركود,الكمية,سعر البيع\n';
+            for (var i = 0; i < parts.length; i++) {
+                var p = parts[i];
+                csv += '"' + (p.name || '') + '","' + (p.barcode || '') + '",' + (p.quantity || 0) + ',' + (p.sellPrice || 0) + '\n';
+            }
+        } else {
+            csv += 'النوع,الوصف,المبلغ,التاريخ\n';
+            sales.forEach(function(s) { csv += '"مبيعات","فاتورة #' + s.id + '",' + (s.total || 0) + ',"' + (s.date || '') + '"\n'; });
+            expenses.forEach(function(e) { csv += '"مصاريف","' + (e.description || '') + '",' + (e.amount || 0) + ',"' + (e.date || '') + '"\n'; });
+            returns.forEach(function(r) { csv += '"مرتجعات","مرتجع #' + r.id + '",' + (r.total || 0) + ',"' + (r.date || '') + '"\n'; });
+        }
+
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'تقرير_وسام_' + type + '_' + date + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم التصدير');
+    }).catch(function(error) {
+        console.error('Error exporting report:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+// ============================================================
+// 13. الباركودات
+// ============================================================
 function loadBarcodeTab() {
     var container = document.getElementById('t-barcode');
-    if (!container) return;
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-barcode"></i> الباركودات</h3><p class="empty-state">✅ الباركودات تعمل!</p></div>`;
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-barcode"></i> تجهيز وطباعة باركودات</h3>
+            <div class="flex">
+                <label style="font-size:12px;color:#666;flex:0 0 auto">النوع:</label>
+                <select id="barcodeType" onchange="updateBarcodePreview()" style="flex:1">
+                    <option value="ST">🏭 مخزن ST-</option>
+                    <option value="MT">🔧 صيانة MT-</option>
+                </select>
+            </div>
+            <div class="flex">
+                <label style="font-size:12px;color:#666;flex:0 0 auto">البداية:</label>
+                <input type="number" id="barcodeStart" value="1" min="1" oninput="updateBarcodePreview()" style="flex:1">
+                <label style="font-size:12px;color:#666;flex:0 0 auto">الكمية:</label>
+                <select id="barcodeCount" onchange="updateBarcodePreview()" style="flex:1">
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px;margin:8px 0">
+                <span>معاينة:</span>
+                <span id="barcodePreview" style="font-weight:700;color:#2196F3">ST-0001 إلى ST-0050</span>
+                <div style="font-size:10px;color:#999" id="nextStartHint">البداية التالية: 51</div>
+            </div>
+            <div class="flex">
+                <button class="btn btn-primary flex-1" onclick="printBarcodeBatch()"><i class="fa-solid fa-print"></i> طباعة</button>
+                <button class="btn btn-success flex-1" onclick="saveBarcodesToStore()"><i class="fa-solid fa-save"></i> حفظ</button>
+                <button class="btn btn-sm btn-warning" onclick="exportBarcodesToCSV()"><i class="fa-solid fa-file-export"></i></button>
+            </div>
+        </div>
+        <div class="card">
+            <h3><i class="fa-solid fa-list"></i> الباركودات المجهزة</h3>
+            <div class="flex">
+                <select id="savedBarcodeFilter" onchange="loadSavedBarcodes()" style="flex:1;margin-bottom:0">
+                    <option value="all">الكل</option>
+                    <option value="ST">ST-</option>
+                    <option value="MT">MT-</option>
+                    <option value="unused">غير مستخدمة</option>
+                    <option value="used">مستخدمة</option>
+                </select>
+                <button class="btn btn-sm btn-danger" onclick="clearAllBarcodes()"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <div id="savedBarcodesList"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    updateBarcodePreview();
+    setTimeout(function() { loadSavedBarcodes(); }, 300);
 }
 
-function loadScanTab() {
-    var container = document.getElementById('t-scan');
-    if (!container) return;
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-camera"></i> مسح باركود</h3><p class="empty-state">✅ المسح يعمل!</p></div>`;
+function updateBarcodePreview() {
+    var type = document.getElementById('barcodeType') ? document.getElementById('barcodeType').value : 'ST';
+    var start = parseInt(document.getElementById('barcodeStart') ? document.getElementById('barcodeStart').value : 1) || 1;
+    var count = parseInt(document.getElementById('barcodeCount') ? document.getElementById('barcodeCount').value : 50) || 50;
+    var end = start + count - 1;
+    var prefix = type + '-';
+    var preview = document.getElementById('barcodePreview');
+    var hint = document.getElementById('nextStartHint');
+    if (preview) preview.textContent = prefix + String(start).padStart(4, '0') + ' إلى ' + prefix + String(end).padStart(4, '0');
+    if (hint) hint.textContent = 'البداية التالية: ' + (end + 1);
 }
 
-function loadSettingsTab() {
-    var container = document.getElementById('t-settings');
+function saveBarcodesToStore() {
+    var type = document.getElementById('barcodeType').value;
+    var start = parseInt(document.getElementById('barcodeStart').value) || 1;
+    var count = parseInt(document.getElementById('barcodeCount').value) || 50;
+    var prefix = type + '-';
+
+    getAll('prepared_barcodes').then(function(existing) {
+        var added = 0;
+        var promises = [];
+        var existingMap = {};
+        for (var i = 0; i < existing.length; i++) existingMap[existing[i].barcode] = true;
+        for (var i = 0; i < count; i++) {
+            var barcode = prefix + String(start + i).padStart(4, '0');
+            if (!existingMap[barcode]) {
+                promises.push(addTo('prepared_barcodes', { barcode: barcode, type: type, used: false, createdAt: new Date().toISOString() }));
+                added++;
+            }
+        }
+        return Promise.all(promises).then(function() {
+            showToast('✅ تم حفظ ' + added + ' باركود جديد');
+            loadSavedBarcodes();
+            updateBarcodePreview();
+        });
+    }).catch(function(error) {
+        console.error('Error saving barcodes:', error);
+        showToast('❌ حدث خطأ في الحفظ');
+    });
+}
+
+function loadSavedBarcodes() {
+    var container = document.getElementById('savedBarcodesList');
     if (!container) return;
-    if (currentUser && currentUser.role === 'employee') {
-        container.innerHTML = '<p class="empty-state">⛔ غير مسموح</p>';
+    var filter = document.getElementById('savedBarcodeFilter') ? document.getElementById('savedBarcodeFilter').value : 'all';
+
+    getAll('prepared_barcodes').then(function(barcodes) {
+        if (barcodes.length === 0) { container.innerHTML = '<p class="empty-state">📭 لا توجد باركودات مجهزة</p>'; return; }
+
+        var filtered = barcodes;
+        if (filter === 'ST' || filter === 'MT') filtered = barcodes.filter(function(b) { return b.type === filter; });
+        else if (filter === 'unused') filtered = barcodes.filter(function(b) { return !b.used; });
+        else if (filter === 'used') filtered = barcodes.filter(function(b) { return b.used; });
+
+        filtered.sort(function(a, b) { return a.barcode.localeCompare(b.barcode); });
+
+        var unused = 0, used = 0;
+        for (var i = 0; i < barcodes.length; i++) {
+            if (barcodes[i].used) used++; else unused++;
+        }
+
+        var html = `<div class="text-muted">🟢 متاح: <strong>${unused}</strong> | 🔴 مستخدم: <strong>${used}</strong> | 📦 المجموع: <strong>${barcodes.length}</strong></div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px;max-height:300px;overflow-y:auto">`;
+
+        var maxItems = Math.min(filtered.length, 200);
+        for (var j = 0; j < maxItems; j++) {
+            var b = filtered[j];
+            var bg = b.used ? '#FFEBEE' : '#E8F5E9';
+            var color = b.used ? '#C62828' : '#2E7D32';
+            html += `<div style="background:${bg};padding:4px;text-align:center;border-radius:4px;cursor:pointer;font-size:10px" 
+                     onclick="copyBarcode('${b.barcode}')" title="${b.barcode} - ${b.used ? 'مستخدم' : 'متاح'}">
+                    <span style="color:${color}">${b.barcode}</span>
+                </div>`;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading saved barcodes:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function copyBarcode(barcode) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(barcode).then(function() { showToast('📋 تم نسخ ' + barcode); })
+        .catch(function() { showToast('📋 ' + barcode); });
+    } else {
+        var input = document.createElement('input');
+        input.value = barcode;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        showToast('📋 ' + barcode);
+    }
+}
+
+function clearAllBarcodes() {
+    if (!confirm('⚠️ هل أنت متأكد من حذف جميع الباركودات المجهزة؟')) return;
+    clearStore('prepared_barcodes').then(function() {
+        showToast('🗑️ تم حذف جميع الباركودات');
+        loadSavedBarcodes();
+    }).catch(function(error) {
+        console.error('Error clearing barcodes:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function exportBarcodesToCSV() {
+    getAll('prepared_barcodes').then(function(barcodes) {
+        if (barcodes.length === 0) { showToast('📭 لا توجد بيانات للتصدير'); return; }
+        var csv = 'الباركود,النوع,الحالة,تاريخ الإنشاء\n';
+        for (var i = 0; i < barcodes.length; i++) {
+            var b = barcodes[i];
+            csv += '"' + b.barcode + '","' + (b.type || '') + '","' + (b.used ? 'مستخدم' : 'متاح') + '","' + (b.createdAt || '') + '"\n';
+        }
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'باركودات_وسام_' + new Date().toISOString().split('T')[0] + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم التصدير');
+    }).catch(function(error) {
+        console.error('Error exporting barcodes:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function printBarcode(barcode, label) {
+    if (!barcode || barcode.trim() === '' || barcode === 'undefined' || barcode === 'null') {
+        showToast('⚠️ لا يوجد باركود للطباعة');
         return;
     }
-    container.innerHTML = `<div class="card"><h3><i class="fa-solid fa-gear"></i> الإعدادات</h3><p class="empty-state">✅ الإعدادات تعمل!</p></div>`;
+
+    var date = new Date();
+    var dateStr = date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0');
+
+    var html = `
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head><meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            *{margin:0;padding:0}
+            body{font-family:"Tajawal",sans-serif;text-align:center;padding:20px;background:#FFF}
+            .bc-container{border:3px dashed #000;padding:25px 35px;display:inline-block;border-radius:12px;background:#FFF;margin:20px auto}
+            .bc-label{font-size:16px;color:#333;margin-bottom:8px}
+            .bc-code{font-family:"Libre Barcode 39",monospace;font-size:60px;text-align:center;direction:ltr;margin:10px 0}
+            .bc-text{font-family:"Courier New",monospace;font-size:18px;letter-spacing:3px;color:#000}
+            .bc-shop{font-size:11px;color:#666;margin-top:8px}
+            @media print{body{padding:10mm}.bc-container{border:2px dashed #000}}
+            @page{size:auto;margin:5mm}
+        </style>
+    </head>
+    <body>
+        <div class="bc-container">
+            <div class="bc-label">${label || 'مركز وسام'}</div>
+            <div class="bc-code">*${barcode}*</div>
+            <div class="bc-text">${barcode}</div>
+            <div class="bc-shop">مركز وسام للإلكترونيات | ${dateStr}</div>
+        </div>
+        <script>
+            window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); };
+        <\/script>
+    </body>
+    </html>`;
+
+    var win = window.open('', '_blank', 'width=450,height=350');
+    if (win) { win.document.write(html); win.document.close(); }
+    else { showToast('⚠️ يرجى السماح بالنوافذ المنبثقة'); }
 }
 
-function showQuickExpense() {
-    showToast('💸 إضافة مصروف');
+function printBarcodeBatch() {
+    var type = document.getElementById('barcodeType').value;
+    var start = parseInt(document.getElementById('barcodeStart').value) || 1;
+    var count = parseInt(document.getElementById('barcodeCount').value) || 50;
+    var prefix = type + '-';
+    var date = new Date();
+    var dateStr = date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0');
+
+    var html = `
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head><meta charset="UTF-8"><title>طباعة باركودات</title>
+        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            *{margin:0;padding:0}
+            body{font-family:"Tajawal",sans-serif;padding:10px;background:#FFF}
+            .header{text-align:center;margin-bottom:15px}
+            .header h2{font-size:18px}
+            .header p{font-size:12px;color:#666}
+            .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+            .item{border:2px dashed #999;padding:14px 10px;text-align:center;border-radius:10px;page-break-inside:avoid;background:#FFF}
+            .bc-code{font-family:"Libre Barcode 39",monospace;font-size:36px;direction:ltr;margin:4px 0}
+            .bc-text{font-family:"Courier New",monospace;font-size:11px;letter-spacing:2px}
+            .bc-shop{font-size:8px;color:#666}
+            @media print{body{padding:5mm}.item{border:1.5px dashed #999}}
+            @page{size:A4;margin:8mm}
+        </style>
+    </head>
+    <body>
+        <div class="header"><h2>مركز وسام للإلكترونيات</h2><p>${dateStr} | باركودات ${type === 'ST' ? 'مخزن' : 'صيانة'}</p></div>
+        <div class="grid">`;
+
+    for (var i = 0; i < count; i++) {
+        var barcode = prefix + String(start + i).padStart(4, '0');
+        html += `<div class="item"><div class="bc-code">*${barcode}*</div><div class="bc-text">${barcode}</div><div class="bc-shop">وسام | ${dateStr}</div></div>`;
+    }
+
+    html += `</div><script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); };<\/script></body></html>`;
+
+    var win = window.open('', '_blank', 'width=900,height=700');
+    if (win) { win.document.write(html); win.document.close(); }
+    else { showToast('⚠️ يرجى السماح بالنوافذ المنبثقة'); }
 }
 
-function formatDate(dateString) {
-    if (!dateString) return '';
+// ============================================================
+// 14. الإعدادات والنسخ الاحتياطي
+// ============================================================
+function loadSettingsTab() {
+    var container = document.getElementById('t-settings');
+    if (currentUser && currentUser.role === 'employee') {
+        container.innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-gear"></i> الإعدادات</h3>
+            <h4 style="margin-top:10px">🔑 كلمات المرور</h4>
+            <input type="password" id="settingsAdminPass" placeholder="كلمة مرور المدير الجديدة" value="">
+            <input type="password" id="settingsEmployeePass" placeholder="كلمة مرور الموظف الجديدة" value="">
+            <button class="btn btn-primary" onclick="updatePasswords()"><i class="fa-solid fa-save"></i> تحديث كلمات المرور</button>
+            
+            <h4 style="margin-top:15px">📞 معلومات المتجر</h4>
+            <input type="text" id="settingsShopName" placeholder="اسم المتجر" value="">
+            <input type="text" id="settingsShopAddress" placeholder="العنوان" value="">
+            <input type="text" id="settingsPhone1" placeholder="رقم الهاتف 1" value="">
+            <input type="text" id="settingsPhone2" placeholder="رقم الهاتف 2" value="">
+            <button class="btn btn-primary" onclick="updateShopInfo()"><i class="fa-solid fa-save"></i> تحديث المعلومات</button>
+            
+            <h4 style="margin-top:15px">💾 النسخ الاحتياطي</h4>
+            <div class="flex">
+                <button class="btn btn-success flex-1" onclick="exportBackup()"><i class="fa-solid fa-download"></i> تصدير</button>
+                <button class="btn btn-warning flex-1" onclick="document.getElementById('backupFileInput').click()"><i class="fa-solid fa-upload"></i> استيراد</button>
+                <input type="file" id="backupFileInput" accept=".json" style="display:none" onchange="importBackup(event)">
+            </div>
+        </div>
+    `;
+
+    Promise.all([
+        getSetting('shopName', 'مركز وسام للإلكترونيات'),
+        getSetting('shopAddress', 'ريف دمشق - مخيم السيدة زينب'),
+        getSetting('shopPhone1', '0937572101'),
+        getSetting('shopPhone2', '0956562865')
+    ]).then(function(values) {
+        document.getElementById('settingsShopName').value = values[0];
+        document.getElementById('settingsShopAddress').value = values[1];
+        document.getElementById('settingsPhone1').value = values[2];
+        document.getElementById('settingsPhone2').value = values[3];
+    });
+}
+
+function updatePasswords() {
+    var adminPass = document.getElementById('settingsAdminPass').value.trim();
+    var employeePass = document.getElementById('settingsEmployeePass').value.trim();
+
+    if (!adminPass && !employeePass) { showToast('⚠️ الرجاء إدخال كلمة مرور جديدة'); return; }
+
+    var promises = [];
+    if (adminPass) promises.push(setSetting('adminPassword', adminPass));
+    if (employeePass) promises.push(setSetting('employeePassword', employeePass));
+
+    Promise.all(promises).then(function() {
+        return getAll('users').then(function(users) {
+            var promises2 = [];
+            for (var i = 0; i < users.length; i++) {
+                if (users[i].username === 'admin' && adminPass) {
+                    users[i].password = adminPass;
+                    promises2.push(updateIn('users', users[i]));
+                }
+                if (users[i].username === 'employee' && employeePass) {
+                    users[i].password = employeePass;
+                    promises2.push(updateIn('users', users[i]));
+                }
+            }
+            return Promise.all(promises2);
+        });
+    }).then(function() {
+        document.getElementById('settingsAdminPass').value = '';
+        document.getElementById('settingsEmployeePass').value = '';
+        showToast('✅ تم تحديث كلمات المرور');
+    }).catch(function(error) {
+        console.error('Error updating passwords:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function updateShopInfo() {
+    var shopName = document.getElementById('settingsShopName').value.trim();
+    var shopAddress = document.getElementById('settingsShopAddress').value.trim();
+    var phone1 = document.getElementById('settingsPhone1').value.trim();
+    var phone2 = document.getElementById('settingsPhone2').value.trim();
+
+    if (!shopName) { showToast('⚠️ اسم المتجر مطلوب'); return; }
+
+    Promise.all([
+        setSetting('shopName', shopName),
+        setSetting('shopAddress', shopAddress || 'ريف دمشق - مخيم السيدة زينب'),
+        setSetting('shopPhone1', phone1 || '0937572101'),
+        setSetting('shopPhone2', phone2 || '0956562865')
+    ]).then(function() {
+        showToast('✅ تم تحديث معلومات المتجر');
+        document.getElementById('headerTitle').innerHTML = '<i class="fa-solid fa-microchip"></i> ' + shopName;
+    }).catch(function(error) {
+        console.error('Error updating shop info:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function exportBackup() {
+    var stores = ['parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'cash_flow', 'prepared_barcodes', 'settings'];
+    var promises = stores.map(function(name) { return getAll(name); });
+    
+    Promise.all(promises).then(function(results) {
+        var backupData = {};
+        for (var i = 0; i < stores.length; i++) backupData[stores[i]] = results[i];
+        var json = JSON.stringify(backupData, null, 2);
+        var blob = new Blob([json], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'وسام_نسخة_احتياطية_' + new Date().toISOString().split('T')[0] + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم تصدير النسخة الاحتياطية');
+    }).catch(function(error) {
+        console.error('Error exporting backup:', error);
+        showToast('❌ حدث خطأ في التصدير');
+    });
+}
+
+function importBackup(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            var data = JSON.parse(e.target.result);
+            var stores = ['parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'cash_flow', 'prepared_barcodes', 'settings'];
+            var promises = [];
+            
+            for (var i = 0; i < stores.length; i++) {
+                var storeName = stores[i];
+                if (data[storeName]) {
+                    promises.push(clearStore(storeName).then(function() {
+                        var items = data[storeName];
+                        var addPromises = [];
+                        for (var j = 0; j < items.length; j++) {
+                            addPromises.push(addTo(storeName, items[j]));
+                        }
+                        return Promise.all(addPromises);
+                    }));
+                }
+            }
+            
+            Promise.all(promises).then(function() {
+                showToast('✅ تم استيراد النسخة الاحتياطية');
+                var activeTab = document.querySelector('.tab.active');
+                if (activeTab) {
+                    var id = activeTab.id.replace('t-', '');
+                    if (id === 'settings') loadSettingsTab();
+                    else if (id === 'home') loadDashboardStats();
+                }
+                loadAllParts();
+            }).catch(function(error) {
+                console.error('Error importing backup:', error);
+                showToast('❌ حدث خطأ في الاستيراد');
+            });
+        } catch (error) {
+            console.error('Error parsing backup file:', error);
+            showToast('❌ ملف غير صالح');
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+// ============================================================
+// 15. مسح الباركود (الكاميرا) - مختصر
+// ============================================================
+function loadScanTab() {
+    var container = document.getElementById('t-scan');
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-camera"></i> مسح باركود</h3>
+            <div id="scannerContainer" style="display:none;position:relative;margin-bottom:10px">
+                <video id="barcodeVideo" autoplay playsinline style="width:100%;height:auto;display:block;border-radius:8px;background:#000;min-height:200px"></video>
+                <div class="scan-line"></div>
+                <button class="btn btn-sm btn-danger" style="position:absolute;top:8px;right:8px;z-index:10" onclick="stopBarcodeScanner()"><i class="fa-solid fa-xmark"></i> إيقاف</button>
+            </div>
+            <div id="cameraStatus">
+                <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:10px" onclick="startBarcodeScanner()">
+                    <i class="fa-solid fa-camera"></i> فتح الكاميرا
+                </button>
+                <div class="camera-placeholder">
+                    <i class="fa-solid fa-qrcode"></i>
+                    <div class="status">اضغط على زر "فتح الكاميرا" لبدء المسح</div>
+                </div>
+            </div>
+            <div id="scanResult" style="display:none;background:#E8F5E9;padding:12px;border-radius:8px;margin-bottom:10px;text-align:center">
+                <div style="font-size:12px;color:#666">تم المسح:</div>
+                <div style="font-size:22px;font-weight:700;color:#2E7D32;font-family:'Libre Barcode 39',monospace;direction:ltr" id="scannedBarcode"></div>
+                <div style="font-size:14px;font-weight:700;color:#333" id="scannedBarcodeText"></div>
+                <div class="flex" style="justify-content:center;margin-top:8px">
+                    <button class="btn btn-sm btn-primary" onclick="searchScannedBarcode()"><i class="fa-solid fa-search"></i> بحث</button>
+                    <button class="btn btn-sm btn-success" onclick="copyScannedBarcode()"><i class="fa-solid fa-copy"></i> نسخ</button>
+                    <button class="btn btn-sm btn-warning" onclick="printBarcode(scannedBarcodeValue, 'ممسوح')"><i class="fa-solid fa-print"></i> طباعة</button>
+                </div>
+            </div>
+            <div class="border-top">
+                <label style="font-size:12px;color:#666">أو إدخال يدوي:</label>
+                <div class="flex">
+                    <input type="text" id="manualBarcodeInput" placeholder="أدخل الباركود يدوياً..." style="flex:1;margin-bottom:0">
+                    <button class="btn btn-primary btn-sm" onclick="searchManualBarcode()"><i class="fa-solid fa-search"></i> بحث</button>
+                </div>
+            </div>
+            <div id="scanSearchResults" style="margin-top:10px;max-height:250px;overflow-y:auto"></div>
+        </div>
+    `;
+}
+
+function startBarcodeScanner() {
+    var container = document.getElementById('scannerContainer');
+    var video = document.getElementById('barcodeVideo');
+    var status = document.getElementById('cameraStatus');
+    if (!container || !video) return;
+
+    container.style.display = 'block';
+    if (status) status.style.display = 'none';
+    document.getElementById('scanResult').style.display = 'none';
+    document.getElementById('scanSearchResults').innerHTML = '';
+
+    var constraints = { video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } } };
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('❌ متصفحك لا يدعم الكاميرا');
+        container.style.display = 'none';
+        if (status) status.style.display = 'block';
+        return;
+    }
+
+    navigator.mediaDevices.getUserMedia(constraints)
+        .then(function(stream) {
+            scanStream = stream;
+            scanRunning = true;
+            video.srcObject = stream;
+            return video.play();
+        })
+        .then(function() {
+            showToast('📷 الكاميرا مفتوحة');
+            if ('BarcodeDetector' in window) {
+                startBarcodeDetection(video);
+            } else {
+                showToast('📷 أدخل الباركود يدوياً');
+            }
+        })
+        .catch(function(error) {
+            console.error('Camera error:', error);
+            showToast('❌ لا يمكن الوصول للكاميرا');
+            container.style.display = 'none';
+            if (status) status.style.display = 'block';
+            scanRunning = false;
+        });
+}
+
+function startBarcodeDetection(video) {
+    if (!('BarcodeDetector' in window)) return;
     try {
-        var date = new Date(dateString);
-        return date.getFullYear() + '/' + String(date.getMonth() + 1).padStart(2, '0') + '/' + String(date.getDate()).padStart(2, '0');
-    } catch(e) { return dateString; }
+        var detector = new BarcodeDetector({ formats: ['code_39', 'code_128', 'ean_13'] });
+        function scanFrame() {
+            if (!scanRunning || !video || video.paused) return;
+            detector.detect(video).then(function(barcodes) {
+                if (barcodes && barcodes.length > 0) {
+                    var barcode = barcodes[0].rawValue;
+                    if (barcode) { stopBarcodeScanner(); showScanResult(barcode); return; }
+                }
+                if (scanRunning) requestAnimationFrame(scanFrame);
+            }).catch(function() { if (scanRunning) requestAnimationFrame(scanFrame); });
+        }
+        setTimeout(function() { if (scanRunning) scanFrame(); }, 500);
+    } catch (error) { console.error('Error:', error); showToast('⚠️ استخدم الإدخال اليدوي'); }
+}
+
+function stopBarcodeScanner() {
+    scanRunning = false;
+    if (scanStream) { scanStream.getTracks().forEach(function(track) { track.stop(); }); scanStream = null; }
+    var video = document.getElementById('barcodeVideo');
+    if (video) { video.srcObject = null; video.pause(); }
+    var container = document.getElementById('scannerContainer');
+    if (container) container.style.display = 'none';
+    var status = document.getElementById('cameraStatus');
+    if (status) status.style.display = 'block';
+}
+
+function showScanResult(barcode) {
+    if (!barcode) return;
+    scannedBarcodeValue = barcode;
+    var resultDiv = document.getElementById('scanResult');
+    var barcodeDiv = document.getElementById('scannedBarcode');
+    var textDiv = document.getElementById('scannedBarcodeText');
+    if (resultDiv) resultDiv.style.display = 'block';
+    if (barcodeDiv) barcodeDiv.textContent = '*' + barcode + '*';
+    if (textDiv) textDiv.textContent = barcode;
+    if (navigator.vibrate) navigator.vibrate(100);
+    showToast('✅ تم مسح الباركود');
+    performBarcodeSearch(barcode);
+}
+
+function searchScannedBarcode() {
+    if (!scannedBarcodeValue) { showToast('❌ لا يوجد باركود للمسح'); return; }
+    performBarcodeSearch(scannedBarcodeValue);
+}
+
+function searchManualBarcode() {
+    var input = document.getElementById('manualBarcodeInput');
+    if (!input) return;
+    var barcode = input.value.trim();
+    if (!barcode) { showToast('⚠️ الرجاء إدخال باركود'); return; }
+    scannedBarcodeValue = barcode;
+    var resultDiv = document.getElementById('scanResult');
+    var barcodeDiv = document.getElementById('scannedBarcode');
+    var textDiv = document.getElementById('scannedBarcodeText');
+    if (resultDiv) resultDiv.style.display = 'block';
+    if (barcodeDiv) barcodeDiv.textContent = '*' + barcode + '*';
+    if (textDiv) textDiv.textContent = barcode;
+    performBarcodeSearch(barcode);
+}
+
+function copyScannedBarcode() {
+    if (!scannedBarcodeValue) return;
+    copyBarcode(scannedBarcodeValue);
+}
+
+function performBarcodeSearch(barcode) {
+    var container = document.getElementById('scanSearchResults');
+    if (!container) return;
+    container.innerHTML = '<p class="empty-state">⏳ جاري البحث...</p>';
+
+    var html = '';
+    getAll('parts').then(function(parts) {
+        var matchedParts = parts.filter(function(p) { return p.barcode && p.barcode.toLowerCase() === barcode.toLowerCase(); });
+        if (matchedParts.length > 0) {
+            html += `<div style="background:#E8F5E9;padding:10px;border-radius:8px;margin-bottom:8px"><strong>📦 المخزن:</strong>`;
+            for (var i = 0; i < matchedParts.length; i++) {
+                var p = matchedParts[i];
+                html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #C8E6C9">
+                    <span>${p.name} | المخزون: ${p.quantity} | ${p.sellPrice} ل.س</span>
+                    <button class="btn btn-sm btn-primary" onclick="switchTab('sales');setTimeout(function(){addPartToCart(${p.id});},100)"><i class="fa-solid fa-cart-plus"></i></button>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        return getAll('repairs');
+    }).then(function(repairs) {
+        var matchedRepairs = repairs.filter(function(r) { return r.deviceBarcode && r.deviceBarcode.toLowerCase() === barcode.toLowerCase(); });
+        if (matchedRepairs.length > 0) {
+            html += `<div style="background:#FFF3E0;padding:10px;border-radius:8px;margin-bottom:8px"><strong>🔧 الصيانة:</strong>`;
+            for (var i = 0; i < matchedRepairs.length; i++) {
+                var r = matchedRepairs[i];
+                html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #FFE0B2">
+                    <span>${r.deviceType} - ${r.customerName} | ${r.total} ل.س</span>
+                    <button class="btn btn-sm btn-warning" onclick="switchTab('repair')"><i class="fa-solid fa-screwdriver-wrench"></i></button>
+                </div>`;
+            }
+            html += '</div>';
+        }
+        return getAll('prepared_barcodes');
+    }).then(function(barcodes) {
+        var matchedBarcodes = barcodes.filter(function(b) { return b.barcode.toLowerCase() === barcode.toLowerCase(); });
+        if (matchedBarcodes.length > 0) {
+            html += `<div style="background:#F3E5F5;padding:10px;border-radius:8px;margin-bottom:8px"><strong>🏷️ الباركودات المجهزة:</strong>`;
+            for (var i = 0; i < matchedBarcodes.length; i++) {
+                var b = matchedBarcodes[i];
+                html += `<div style="padding:4px 0;border-bottom:1px solid #E1BEE7">
+                    <span>${b.barcode} (${b.type === 'ST' ? 'مخزن' : 'صيانة'}) - ${b.used ? '🔴 مستخدم' : '🟢 متاح'}</span>
+                </div>`;
+            }
+            html += '</div>';
+        }
+
+        if (!html) {
+            html = `
+                <div style="background:#FFEBEE;padding:15px;border-radius:8px;text-align:center">
+                    <div style="font-size:24px;color:#C62828">❌</div>
+                    <p style="color:#C62828;font-weight:700">لم يتم العثور على هذا الباركود</p>
+                    <p class="text-muted">${barcode}</p>
+                    <button class="btn btn-sm btn-primary mt-8" onclick="showAddPartFromScan('${barcode}')">
+                        <i class="fa-solid fa-plus"></i> إضافة قطعة جديدة
+                    </button>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error performing barcode search:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ في البحث</p>';
+    });
+}
+
+function showAddPartFromScan(barcode) {
+    openModal(`
+        <h3>📦 إضافة قطعة جديدة</h3>
+        <p style="font-size:12px;color:#666">الباركود: <strong>${barcode}</strong></p>
+        <input type="text" id="scanPartName" placeholder="اسم القطعة *">
+        <input type="number" id="scanPartPrice" placeholder="سعر البيع *">
+        <input type="number" id="scanPartQty" placeholder="الكمية" value="1">
+        <input type="text" id="scanPartCategory" placeholder="الصنف (اختياري)">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="savePartFromScan('${barcode}')">
+            <i class="fa-solid fa-save"></i> حفظ
+        </button>
+    `);
+}
+
+function savePartFromScan(barcode) {
+    var name = document.getElementById('scanPartName').value.trim();
+    var price = parseFloat(document.getElementById('scanPartPrice').value);
+    var qty = parseInt(document.getElementById('scanPartQty').value) || 1;
+    var category = document.getElementById('scanPartCategory').value.trim();
+
+    if (!name || !price || price <= 0) { showToast('⚠️ الاسم والسعر مطلوبان'); return; }
+
+    addTo('parts', {
+        name: name, barcode: barcode, category: category || '',
+        quantity: qty, costPrice: 0, sellPrice: price,
+        createdAt: new Date().toISOString()
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم إضافة ' + name);
+        performBarcodeSearch(barcode);
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error saving part:', error);
+        showToast('❌ حدث خطأ في الحفظ');
+    });
 }
 
 // ============================================================
@@ -678,6 +3135,16 @@ window.showQuickExpense = showQuickExpense;
 window.showToast = showToast;
 window.openModal = openModal;
 window.closeModal = closeModal;
+window.addPartToCart = addPartToCart;
+window.printBarcode = printBarcode;
+window.editRepair = editRepair;
+window.deleteRepair = deleteRepair;
+window.toggleRepairReceived = toggleRepairReceived;
+window.deleteSale = deleteSale;
+window.deleteReturn = deleteReturn;
+window.sendWhatsAppReady = sendWhatsAppReady;
+window.showAddPartFromScan = showAddPartFromScan;
+window.savePartFromScan = savePartFromScan;
 
 console.log('✅ التطبيق جاهز للاستخدام');
 </script>
