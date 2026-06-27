@@ -168,3 +168,194 @@
 </div>
 
 <script>
+// ============================================================
+// الجزء 2: المتغيرات العامة ودوال IndexedDB
+// ============================================================
+
+const DB_NAME = 'WissamCenterDB';
+const DB_VERSION = 8;
+const ADMIN_PASS = '1234';
+const EMPLOYEE_PASS = '1111';
+const MAX_LOGIN_ATTEMPTS = 5;
+
+let db = null;
+let currentUser = null;
+let loginAttempts = 0;
+let currentCart = [];
+let scanStream = null;
+let scanRunning = false;
+let temporaryData = { repairParts: [] };
+let themeIndex = 0;
+const themes = ['blue', 'green', 'purple'];
+let dbReadyPromise = null;
+let scannerActive = false;
+let scanFrameId = null;
+let scannedBarcodeValue = '';
+
+// عناصر DOM
+var loginScreen = document.getElementById('loginScreen');
+var passInput = document.getElementById('passInput');
+var loginError = document.getElementById('loginError');
+var header = document.getElementById('header');
+var content = document.getElementById('content');
+var tabs = document.getElementById('tabs');
+var toast = document.getElementById('toast');
+
+// ============================================================
+// دوال مساعدة للـ IndexedDB
+// ============================================================
+function dbReady() {
+    if (dbReadyPromise) return dbReadyPromise;
+    
+    dbReadyPromise = new Promise(function(resolve, reject) {
+        if (db) {
+            resolve(db);
+            return;
+        }
+        
+        try {
+            var request = indexedDB.open(DB_NAME, DB_VERSION);
+            
+            request.onerror = function(event) {
+                console.error('IndexedDB error:', event.target.error);
+                reject(event.target.error);
+            };
+            
+            request.onsuccess = function(event) {
+                db = event.target.result;
+                console.log('✅ IndexedDB opened successfully');
+                resolve(db);
+            };
+            
+            request.onupgradeneeded = function(event) {
+                var d = event.target.result;
+                console.log('🔄 Upgrading database...');
+                
+                var stores = ['users', 'parts', 'sales', 'returns', 'debts', 'repairs', 'expenses', 'notifications', 'settings', 'prepared_barcodes', 'cash_flow'];
+                stores.forEach(function(name) {
+                    if (!d.objectStoreNames.contains(name)) {
+                        var store = d.createObjectStore(name, { keyPath: 'id', autoIncrement: true });
+                        if (name === 'users') store.createIndex('username', 'username', { unique: true });
+                        if (name === 'parts') store.createIndex('barcode', 'barcode', { unique: true });
+                        if (name === 'sales') store.createIndex('date', 'date', { unique: false });
+                        if (name === 'debts') store.createIndex('status', 'status', { unique: false });
+                        if (name === 'expenses') store.createIndex('date', 'date', { unique: false });
+                        if (name === 'cash_flow') store.createIndex('date', 'date', { unique: false });
+                        if (name === 'prepared_barcodes') {
+                            store.createIndex('barcode', 'barcode', { unique: true });
+                            store.createIndex('type', 'type', { unique: false });
+                            store.createIndex('used', 'used', { unique: false });
+                        }
+                        if (name === 'settings') {
+                            store.createIndex('key', 'key', { unique: true });
+                        }
+                        console.log('✅ Created store: ' + name);
+                    }
+                });
+            };
+        } catch (error) {
+            console.error('Error opening database:', error);
+            reject(error);
+        }
+    });
+    
+    return dbReadyPromise;
+}
+
+function getAllFromStore(storeName) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readonly');
+                var request = tx.objectStore(storeName).getAll();
+                request.onsuccess = function() { resolve(request.result || []); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function addToStore(storeName, data) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).add(data);
+                request.onsuccess = function() { resolve(request.result); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function updateInStore(storeName, data) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).put(data);
+                request.onsuccess = function() { resolve(request.result); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function deleteFromStore(storeName, id) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).delete(id);
+                request.onsuccess = function() { resolve(); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function clearStore(storeName) {
+    return new Promise(function(resolve, reject) {
+        dbReady().then(function(dbInstance) {
+            try {
+                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var request = tx.objectStore(storeName).clear();
+                request.onsuccess = function() { resolve(); };
+                request.onerror = function() { reject(request.error); };
+            } catch (error) {
+                reject(error);
+            }
+        }).catch(reject);
+    });
+}
+
+function getSetting(key, defaultValue) {
+    return getAllFromStore('settings').then(function(settings) {
+        for (var i = 0; i < settings.length; i++) {
+            if (settings[i].key === key) {
+                return settings[i].value;
+            }
+        }
+        return defaultValue;
+    });
+}
+
+function setSetting(key, value) {
+    return getAllFromStore('settings').then(function(settings) {
+        for (var i = 0; i < settings.length; i++) {
+            if (settings[i].key === key) {
+                settings[i].value = value;
+                return updateInStore('settings', settings[i]);
+            }
+        }
+        return addToStore('settings', { key: key, value: value });
+    });
+    }
