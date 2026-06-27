@@ -326,7 +326,8 @@ function initDefaultData() {
                 shopName: 'مركز وسام للإلكترونيات',
                 shopAddress: 'ريف دمشق - مخيم السيدة زينب',
                 shopPhone1: '0937572101',
-                shopPhone2: '0956562865'
+                shopPhone2: '0956562865',
+                countryCode: '963'
             };
             var existingKeys = {};
             for (var i = 0; i < settings.length; i++) existingKeys[settings[i].key] = true;
@@ -1740,7 +1741,7 @@ function saveRepair() {
 }
 
 // ============================================================
-// دوال الصيانة (تعديل/حذف/واتساب)
+// دوال الصيانة (تعديل/حذف/واتساب مع مفتاح الدولة)
 // ============================================================
 function editRepair(repairId) {
     getAll('repairs').then(function(repairs) {
@@ -1931,9 +1932,15 @@ function sendWhatsAppReady(repairId) {
             getSetting('shopName', 'مركز وسام للإلكترونيات'),
             getSetting('shopAddress', 'ريف دمشق - مخيم السيدة زينب'),
             getSetting('shopPhone1', '0937572101'),
-            getSetting('shopPhone2', '0956562865')
+            getSetting('shopPhone2', '0956562865'),
+            getSetting('countryCode', '963')
         ]).then(function(settings) {
-            var shopName = settings[0], shopAddress = settings[1], phone1 = settings[2], phone2 = settings[3];
+            var shopName = settings[0];
+            var shopAddress = settings[1];
+            var phone1 = settings[2];
+            var phone2 = settings[3];
+            var countryCode = settings[4] || '963';
+
             var customerName = repair.customerName || 'الزبون';
             var deviceType = repair.deviceType || 'الجهاز';
             var serialNumber = repair.serialNumber || 'غير محدد';
@@ -1959,7 +1966,13 @@ function sendWhatsAppReady(repairId) {
 نشكر ثقتكم بنا، ودمتم بخير 🌹`;
 
             var phoneNumber = repair.phone || '';
-            var url = 'https://wa.me/' + (phoneNumber ? phoneNumber : '') + '?text=' + encodeURIComponent(message);
+            phoneNumber = phoneNumber.replace(/^0+/, '');
+            phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
+            
+            var fullPhoneNumber = countryCode + phoneNumber;
+            var url = 'https://wa.me/' + fullPhoneNumber + '?text=' + encodeURIComponent(message);
+            
+            console.log('📱 إرسال واتساب إلى: +' + fullPhoneNumber);
             window.open(url, '_blank');
         });
     }).catch(function(error) {
@@ -2673,7 +2686,7 @@ function printBarcodeBatch() {
 }
 
 // ============================================================
-// 14. الإعدادات والنسخ الاحتياطي
+// 14. الإعدادات مع مفتاح الدولة
 // ============================================================
 function loadSettingsTab() {
     var container = document.getElementById('t-settings');
@@ -2693,7 +2706,10 @@ function loadSettingsTab() {
             <h4 style="margin-top:15px">📞 معلومات المتجر</h4>
             <input type="text" id="settingsShopName" placeholder="اسم المتجر" value="">
             <input type="text" id="settingsShopAddress" placeholder="العنوان" value="">
-            <input type="text" id="settingsPhone1" placeholder="رقم الهاتف 1" value="">
+            <div class="flex">
+                <input type="text" id="settingsCountryCode" placeholder="مفتاح الدولة (مثال: 963)" value="" style="flex:0 0 100px">
+                <input type="text" id="settingsPhone1" placeholder="رقم الهاتف 1" value="" style="flex:1">
+            </div>
             <input type="text" id="settingsPhone2" placeholder="رقم الهاتف 2" value="">
             <button class="btn btn-primary" onclick="updateShopInfo()"><i class="fa-solid fa-save"></i> تحديث المعلومات</button>
             
@@ -2710,12 +2726,14 @@ function loadSettingsTab() {
         getSetting('shopName', 'مركز وسام للإلكترونيات'),
         getSetting('shopAddress', 'ريف دمشق - مخيم السيدة زينب'),
         getSetting('shopPhone1', '0937572101'),
-        getSetting('shopPhone2', '0956562865')
+        getSetting('shopPhone2', '0956562865'),
+        getSetting('countryCode', '963')
     ]).then(function(values) {
         document.getElementById('settingsShopName').value = values[0];
         document.getElementById('settingsShopAddress').value = values[1];
         document.getElementById('settingsPhone1').value = values[2];
         document.getElementById('settingsPhone2').value = values[3];
+        document.getElementById('settingsCountryCode').value = values[4];
     });
 }
 
@@ -2759,6 +2777,7 @@ function updateShopInfo() {
     var shopAddress = document.getElementById('settingsShopAddress').value.trim();
     var phone1 = document.getElementById('settingsPhone1').value.trim();
     var phone2 = document.getElementById('settingsPhone2').value.trim();
+    var countryCode = document.getElementById('settingsCountryCode').value.trim();
 
     if (!shopName) { showToast('⚠️ اسم المتجر مطلوب'); return; }
 
@@ -2766,7 +2785,8 @@ function updateShopInfo() {
         setSetting('shopName', shopName),
         setSetting('shopAddress', shopAddress || 'ريف دمشق - مخيم السيدة زينب'),
         setSetting('shopPhone1', phone1 || '0937572101'),
-        setSetting('shopPhone2', phone2 || '0956562865')
+        setSetting('shopPhone2', phone2 || '0956562865'),
+        setSetting('countryCode', countryCode || '963')
     ]).then(function() {
         showToast('✅ تم تحديث معلومات المتجر');
         document.getElementById('headerTitle').innerHTML = '<i class="fa-solid fa-microchip"></i> ' + shopName;
@@ -2846,7 +2866,7 @@ function importBackup(event) {
 }
 
 // ============================================================
-// 15. مسح الباركود (الكاميرا) مع إضافة صيانة جديدة
+// 15. مسح الباركود مع إضافة صيانة جديدة
 // ============================================================
 function loadScanTab() {
     var container = document.getElementById('t-scan');
@@ -3001,9 +3021,6 @@ function copyScannedBarcode() {
     copyBarcode(scannedBarcodeValue);
 }
 
-// ============================================================
-// دالة البحث عن الباركود مع إضافة صيانة جديدة
-// ============================================================
 function performBarcodeSearch(barcode) {
     var container = document.getElementById('scanSearchResults');
     if (!container) return;
@@ -3057,7 +3074,6 @@ function performBarcodeSearch(barcode) {
             html += '</div>';
         }
 
-        // إذا لم يتم العثور على الباركود في أي مكان
         if (!foundInParts && !foundInRepairs) {
             html = `
                 <div style="background:#FFEBEE;padding:15px;border-radius:8px;text-align:center">
@@ -3075,7 +3091,6 @@ function performBarcodeSearch(barcode) {
                 </div>
             `;
         } else {
-            // إذا تم العثور على الباركود، نضيف زر إضافة صيانة جديدة أيضاً
             html += `
                 <div style="background:#E3F2FD;padding:10px;border-radius:8px;margin-top:8px;text-align:center">
                     <p style="font-size:12px;color:#666">🔧 هل تريد إضافة صيانة جديدة لهذا الباركود؟</p>
@@ -3093,9 +3108,6 @@ function performBarcodeSearch(barcode) {
     });
 }
 
-// ============================================================
-// إضافة صيانة جديدة من المسح
-// ============================================================
 function showAddRepairFromScan(barcode) {
     openModal(`
         <h3>🔧 إضافة صيانة جديدة</h3>
@@ -3138,18 +3150,13 @@ function showAddRepairFromScan(barcode) {
         </button>
     `);
 
-    // تحديث المجموع
-    setTimeout(function() {
-        updateScanRepairTotal();
-    }, 100);
+    setTimeout(function() { updateScanRepairTotal(); }, 100);
 }
 
 function toggleScanRepairPaymentFields() {
     var payment = document.getElementById('scanRepairPayment') ? document.getElementById('scanRepairPayment').value : 'cash';
     var fields = document.getElementById('scanRepairPaymentFields');
-    if (fields) {
-        fields.style.display = (payment === 'partial') ? 'block' : 'none';
-    }
+    if (fields) { fields.style.display = (payment === 'partial') ? 'block' : 'none'; }
     updateScanRepairTotal();
 }
 
@@ -3226,9 +3233,6 @@ function saveRepairFromScan(barcode) {
     });
 }
 
-// ============================================================
-// إضافة قطعة جديدة من المسح
-// ============================================================
 function showAddPartFromScan(barcode) {
     openModal(`
         <h3>📦 إضافة قطعة جديدة</h3>
@@ -3288,7 +3292,6 @@ function initApp() {
 
 setTimeout(initApp, 100);
 
-// ربط الدوال للنافذة
 window.switchTab = switchTab;
 window.doLogin = doLogin;
 window.logout = logout;
