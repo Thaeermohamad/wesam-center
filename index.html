@@ -1948,11 +1948,11 @@ function sendWhatsAppReady(repairId) {
             var dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '‏/');
             var formattedTotal = total.toLocaleString('ar-EG');
 
-            var message = `مرحباً هنا ${customerName} 🌷
+            var message = `مرحباً  ${customerName} 🌷
 
 📢 إشعار من ${shopName}
 
-يسرنا إعلامكم بأن جهازكم جاهز للتسليم:
+نود أعلامكم أن جهازكم جاهز للأستلام من مركز وسام للالكترونيات اوقات الدوام من الساعة 11 صباحا حتى الساعة 8 مساءا:
 🔹 النوع: ${deviceType}
 🔹 الرقم التسلسلي: ${serialNumber}
 💰 التكلفة الكاملة: ${formattedTotal} ل.س
@@ -1963,6 +1963,8 @@ function sendWhatsAppReady(repairId) {
 📍 العنوان: ${shopAddress}
 📞 للتواصل: ${phone1} / ${phone2}
  
+مَعَ قُلُوبٍ نُهْدِيهَا لَكُمْ  💜
+شَاكِرِينَ حُسْنَ تَعَاوُنِكُمْ
 نشكر ثقتكم بنا، ودمتم بخير 🌹`;
 
             var phoneNumber = repair.phone || '';
