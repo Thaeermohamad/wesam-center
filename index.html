@@ -1943,3 +1943,464 @@ function saveRepair() {
         showToast('❌ حدث خطأ في حفظ الصيانة');
     });
             }
+// ============================================================
+// الجزء 9: الصيانة (استكمال) - حذف واستلام وواتساب
+// ============================================================
+
+function editRepair(repairId) {
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        if (repair.isReceived) {
+            showToast('⚠️ لا يمكن تعديل صيانة تم استلام الجهاز فيها');
+            return;
+        }
+
+        var isReceived = repair.isReceived ? 'checked' : '';
+        
+        openModal(`
+            <h3>✏️ تعديل الصيانة</h3>
+            <p style="font-size:12px;color:#666">تعديل بيانات الصيانة #${repair.id}</p>
+            <div class="grid-2">
+                <input type="text" id="editRepairCustomer" placeholder="اسم الزبون *" value="${repair.customerName || ''}">
+                <input type="text" id="editRepairPhone" placeholder="الهاتف" value="${repair.phone || ''}">
+            </div>
+            <div class="grid-2">
+                <input type="text" id="editRepairDevice" placeholder="نوع الجهاز *" value="${repair.deviceType || ''}">
+                <input type="text" id="editRepairSerial" placeholder="الرقم التسلسلي" value="${repair.serialNumber || ''}">
+            </div>
+            <input type="text" id="editRepairBarcode" placeholder="باركود الجهاز" value="${repair.deviceBarcode || ''}">
+            <textarea id="editRepairProblem" placeholder="المشكلة..." rows="2">${repair.problem || ''}</textarea>
+            
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px;margin:8px 0">
+                <div class="grid-2">
+                    <div>
+                        <label>تكلفة القطع: <strong>${repair.partsCost || 0}</strong> ل.س</label>
+                    </div>
+                    <div>
+                        <label>أجرة يد: <input type="number" id="editRepairLabor" value="${repair.laborCost || 0}" style="width:70px;display:inline" oninput="updateEditRepairTotal()"></label>
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div>
+                        <label>حسم: <input type="number" id="editRepairDiscount" value="${repair.discount || 0}" style="width:70px;display:inline" oninput="updateEditRepairTotal()"></label>
+                    </div>
+                    <div>
+                        <label>الإجمالي: <strong id="editRepairTotalDisplay">${repair.total || 0}</strong> ل.س</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid-2">
+                <select id="editRepairPayment">
+                    <option value="cash" ${repair.paymentType === 'cash' ? 'selected' : ''}>نقدي</option>
+                    <option value="debt" ${repair.paymentType === 'debt' ? 'selected' : ''}>آجل</option>
+                    <option value="partial" ${repair.paymentType === 'partial' ? 'selected' : ''}>جزئي</option>
+                </select>
+                <select id="editRepairStatus">
+                    <option value="in_repair" ${repair.status === 'in_repair' ? 'selected' : ''}>🔧 في الصيانة</option>
+                    <option value="waiting" ${repair.status === 'waiting' ? 'selected' : ''}>⏳ قيد الانتظار</option>
+                    <option value="fixed" ${repair.status === 'fixed' ? 'selected' : ''}>✅ تم الإصلاح</option>
+                </select>
+            </div>
+            
+            <div style="margin:8px 0;padding:10px;background:#E3F2FD;border-radius:8px">
+                <label style="display:flex;align-items:center;gap:10px;font-weight:700;cursor:pointer">
+                    <input type="checkbox" id="editRepairReceived" ${isReceived} style="width:20px;height:20px;cursor:pointer">
+                    <span>📦 الزبون استلم الجهاز</span>
+                </label>
+                ${repair.isReceived ? '<div style="font-size:12px;color:#4CAF50;margin-top:4px">✅ تم استلام الجهاز بتاريخ ' + formatDate(repair.receivedDate) + '</div>' : ''}
+            </div>
+            
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="updateRepairData(${repairId})">
+                <i class="fa-solid fa-save"></i> تحديث البيانات
+            </button>
+        `);
+    }).catch(function(error) {
+        console.error('Error loading repair for edit:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function updateEditRepairTotal() {
+    var labor = parseFloat(document.getElementById('editRepairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('editRepairDiscount').value) || 0;
+    var partsCost = 0;
+    var partsLabel = document.querySelector('#editRepairTotalDisplay')?.parentElement?.parentElement?.previousElementSibling?.querySelector('strong');
+    if (partsLabel) {
+        partsCost = parseFloat(partsLabel.textContent) || 0;
+    }
+    var total = Math.max(0, partsCost + labor - discount);
+    document.getElementById('editRepairTotalDisplay').textContent = total;
+}
+
+function updateRepairData(repairId) {
+    var customer = document.getElementById('editRepairCustomer').value.trim();
+    var device = document.getElementById('editRepairDevice').value.trim();
+    
+    if (!customer || !device) {
+        showToast('⚠️ اسم الزبون ونوع الجهاز مطلوبان');
+        return;
+    }
+
+    var labor = parseFloat(document.getElementById('editRepairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('editRepairDiscount').value) || 0;
+    var total = parseFloat(document.getElementById('editRepairTotalDisplay').textContent) || 0;
+    var isReceived = document.getElementById('editRepairReceived').checked;
+
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        var updatedRepair = {
+            id: repairId,
+            customerName: customer,
+            phone: document.getElementById('editRepairPhone').value.trim() || '',
+            deviceType: device,
+            serialNumber: document.getElementById('editRepairSerial').value.trim() || '',
+            deviceBarcode: document.getElementById('editRepairBarcode').value.trim() || repair.deviceBarcode || '',
+            problem: document.getElementById('editRepairProblem').value.trim() || '',
+            parts: repair.parts || [],
+            partsCost: repair.partsCost || 0,
+            laborCost: labor,
+            discount: discount,
+            total: total,
+            paid: repair.paid || 0,
+            remaining: Math.max(0, total - (repair.paid || 0)),
+            paymentType: document.getElementById('editRepairPayment').value,
+            status: document.getElementById('editRepairStatus').value,
+            date: repair.date,
+            isReceived: isReceived,
+            receivedDate: isReceived ? (repair.receivedDate || new Date().toISOString()) : null
+        };
+
+        return updateInStore('repairs', updatedRepair);
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تحديث الصيانة');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error updating repair:', error);
+        showToast('❌ حدث خطأ في التحديث');
+    });
+}
+
+function deleteRepair(repairId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذه الصيانة؟')) return;
+    
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        if (repair.parts && repair.parts.length > 0) {
+            return getAllFromStore('parts').then(function(parts) {
+                var promises = [];
+                for (var j = 0; j < repair.parts.length; j++) {
+                    var p = repair.parts[j];
+                    for (var k = 0; k < parts.length; k++) {
+                        if (parts[k].id === p.partId) {
+                            parts[k].quantity = (parts[k].quantity || 0) + p.quantity;
+                            promises.push(updateInStore('parts', parts[k]));
+                            break;
+                        }
+                    }
+                }
+                return Promise.all(promises);
+            }).then(function() {
+                return deleteFromStore('repairs', repairId);
+            });
+        } else {
+            return deleteFromStore('repairs', repairId);
+        }
+    }).then(function() {
+        showToast('🗑️ تم حذف الصيانة وإعادة القطع للمخزن');
+        loadRepairsList();
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error deleting repair:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
+}
+
+function toggleRepairReceived(repairId) {
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        repair.isReceived = !repair.isReceived;
+        if (repair.isReceived) {
+            repair.receivedDate = new Date().toISOString();
+        } else {
+            repair.receivedDate = null;
+        }
+
+        return updateInStore('repairs', repair);
+    }).then(function() {
+        showToast('✅ تم تحديث حالة الاستلام');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error toggling received status:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+// ============================================================
+// دالة إرسال واتساب للأجهزة الجاهزة
+// ============================================================
+function sendWhatsAppReady(repairId) {
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        return Promise.all([
+            getSetting('shopName', 'مركز وسام للإلكترونيات'),
+            getSetting('shopAddress', 'ريف دمشق - مخيم السيدة زينب'),
+            getSetting('shopPhone1', '0937572101'),
+            getSetting('shopPhone2', '0956562865')
+        ]).then(function(settings) {
+            var shopName = settings[0];
+            var shopAddress = settings[1];
+            var phone1 = settings[2];
+            var phone2 = settings[3];
+
+            var customerName = repair.customerName || 'الزبون';
+            var deviceType = repair.deviceType || 'الجهاز';
+            var serialNumber = repair.serialNumber || 'غير محدد';
+            var total = repair.total || 0;
+            var dateStr = new Date().toISOString().split('T')[0];
+            var formattedDate = dateStr.replace(/-/g, '‏/');
+            var formattedTotal = total.toLocaleString('ar-EG');
+
+            var message = `مرحباً هنا ${customerName} 🌷
+
+📢 إشعار من ${shopName}
+
+يسرنا إعلامكم بأن جهازكم جاهز للتسليم:
+🔹 النوع: ${deviceType}
+🔹 الرقم التسلسلي: ${serialNumber}
+💰 التكلفة الكاملة: ${formattedTotal} ل.س
+📅 تاريخ الإرسال: ${formattedDate}
+
+الرجاء الحضور لاستلامه خلال 3 أيام 🕒
+
+📍 العنوان: ${shopAddress}
+📞 للتواصل: ${phone1} / ${phone2}
+ 
+نشكر ثقتكم بنا، ودمتم بخير 🌹`;
+
+            var phoneNumber = repair.phone || '';
+            var encodedMessage = encodeURIComponent(message);
+            var url = 'https://wa.me/' + (phoneNumber ? phoneNumber : '') + '?text=' + encodedMessage;
+            window.open(url, '_blank');
+        });
+    }).catch(function(error) {
+        console.error('Error sending WhatsApp:', error);
+        showToast('❌ حدث خطأ في إرسال واتساب');
+    });
+}
+
+function loadRepairsList() {
+    var container = document.getElementById('repairsList');
+    if (!container) return;
+
+    var filter = document.getElementById('repairFilter') ? document.getElementById('repairFilter').value : 'all';
+    var search = document.getElementById('repairSearch') ? document.getElementById('repairSearch').value.toLowerCase().trim() : '';
+
+    getAllFromStore('repairs').then(function(repairs) {
+        if (filter !== 'all') {
+            repairs = repairs.filter(function(r) { return r.status === filter; });
+        }
+        if (search) {
+            repairs = repairs.filter(function(r) {
+                return (r.customerName && r.customerName.toLowerCase().indexOf(search) !== -1) ||
+                       (r.deviceType && r.deviceType.toLowerCase().indexOf(search) !== -1) ||
+                       (r.deviceBarcode && r.deviceBarcode.toLowerCase().indexOf(search) !== -1);
+            });
+        }
+        repairs.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+
+        if (repairs.length === 0) {
+            container.innerHTML = '<p class="empty-state">📭 لا توجد صيانات</p>';
+            return;
+        }
+
+        var statusMap = {
+            'in_repair': { label: '🔧 في الصيانة', color: '#FF9800' },
+            'waiting': { label: '⏳ قيد الانتظار', color: '#2196F3' },
+            'fixed': { label: '✅ تم الإصلاح', color: '#4CAF50' }
+        };
+
+        var html = '';
+        var maxItems = Math.min(repairs.length, 30);
+        for (var i = 0; i < maxItems; i++) {
+            var r = repairs[i];
+            var status = statusMap[r.status] || statusMap['in_repair'];
+            
+            var receivedStatus = r.isReceived ? 
+                '<span class="badge" style="background:#4CAF50;color:#FFF">📦 تم الاستلام</span>' : 
+                '<span class="badge" style="background:#FF9800;color:#FFF">⏳ لم يستلم</span>';
+            
+            var whatsappBtn = '';
+            if (r.status === 'fixed' && !r.isReceived) {
+                whatsappBtn = `<button class="btn btn-sm whatsapp-btn" onclick="sendWhatsAppReady(${r.id})">
+                    <i class="fa-brands fa-whatsapp"></i> واتساب
+                </button>`;
+            }
+            
+            html += `
+                <div style="padding:10px;border:1px solid #EEE;border-radius:8px;margin-top:6px">
+                    <div style="display:flex;justify-content:space-between;flex-wrap:wrap">
+                        <div>
+                            <strong>${r.deviceType}</strong>
+                            <span class="text-muted"> - ${r.customerName}</span>
+                        </div>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap">
+                            ${receivedStatus}
+                            <span class="badge" style="background:${status.color};color:#FFF">${status.label}</span>
+                        </div>
+                    </div>
+                    <div style="font-size:13px;margin-top:4px">
+                        <span>💰 ${r.total} ل.س</span>
+                        ${r.deviceBarcode ? '<span style="margin-right:12px">🏷️ ' + r.deviceBarcode + '</span>' : ''}
+                        ${r.remaining > 0 ? '<span style="margin-right:12px;color:#F44336">متبقي: ' + r.remaining + '</span>' : ''}
+                        ${r.receivedDate ? '<span style="margin-right:12px;color:#4CAF50">📅 ' + formatDate(r.receivedDate) + '</span>' : ''}
+                    </div>
+                    <div class="text-muted">${formatDate(r.date)}</div>
+                    <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
+                        ${r.deviceBarcode ? '<button class="btn btn-sm btn-warning" onclick="printBarcode(\'' + r.deviceBarcode + '\',\'صيانة ' + r.deviceType + '\')"><i class="fa-solid fa-print"></i></button>' : ''}
+                        ${whatsappBtn}
+                        <button class="btn btn-sm btn-success" onclick="editRepair(${r.id})" ${r.isReceived ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>
+                            <i class="fa-solid fa-pen"></i> تعديل
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteRepair(${r.id})"><i class="fa-solid fa-trash"></i> حذف</button>
+                        <button class="btn btn-sm ${r.isReceived ? 'btn-warning' : 'btn-primary'}" onclick="toggleRepairReceived(${r.id})">
+                            <i class="fa-solid fa-check-double"></i> ${r.isReceived ? 'إلغاء الاستلام' : 'تسجيل الاستلام'}
+                        </button>
+                        ${r.remaining > 0 ? '<button class="btn btn-sm btn-primary" onclick="payRepairDebt(' + r.id + ')"><i class="fa-solid fa-hand-holding-dollar"></i> تسديد</button>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading repairs:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function editRepairStatus(repairId) {
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        openModal(`
+            <h3>🔧 تغيير حالة الصيانة</h3>
+            <p><strong>${repair.customerName}</strong> - ${repair.deviceType}</p>
+            <select id="newRepairStatus" style="margin-bottom:0">
+                <option value="in_repair" ${repair.status === 'in_repair' ? 'selected' : ''}>🔧 في الصيانة</option>
+                <option value="waiting" ${repair.status === 'waiting' ? 'selected' : ''}>⏳ قيد الانتظار</option>
+                <option value="fixed" ${repair.status === 'fixed' ? 'selected' : ''}>✅ تم الإصلاح</option>
+            </select>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="updateRepairStatus(${repairId})">
+                <i class="fa-solid fa-save"></i> تحديث
+            </button>
+        `);
+    });
+}
+
+function updateRepairStatus(repairId) {
+    var newStatus = document.getElementById('newRepairStatus').value;
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (repair) {
+            repair.status = newStatus;
+            return updateInStore('repairs', repair);
+        }
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تحديث الحالة');
+        loadRepairsList();
+    }).catch(function(error) {
+        console.error('Error updating repair status:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function payRepairDebt(repairId) {
+    getAllFromStore('repairs').then(function(repairs) {
+        var repair = null;
+        for (var i = 0; i < repairs.length; i++) {
+            if (repairs[i].id === repairId) {
+                repair = repairs[i];
+                break;
+            }
+        }
+        if (!repair) {
+            showToast('❌ الصيانة غير موجودة');
+            return;
+        }
+
+        openModal(`
+            <h3>💰 تسديد باقي الصيان
+            
