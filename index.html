@@ -169,8 +169,9 @@
 
 <script>
 // ============================================================
-// الجزء 2: المتغيرات العامة ودوال IndexedDB
+// الجزء 1: المتغيرات العامة والإعدادات
 // ============================================================
+console.log('🚀 بدء تحميل التطبيق...');
 
 const DB_NAME = 'WissamCenterDB';
 const DB_VERSION = 8;
@@ -201,9 +202,11 @@ var content = document.getElementById('content');
 var tabs = document.getElementById('tabs');
 var toast = document.getElementById('toast');
 
+console.log('✅ تم تهيئة المتغيرات');
+    // ============================================================
+// الجزء 2: دوال قاعدة البيانات (مُبسطة ومُصححة)
 // ============================================================
-// دوال مساعدة للـ IndexedDB
-// ============================================================
+
 function dbReady() {
     if (dbReadyPromise) return dbReadyPromise;
     
@@ -217,7 +220,7 @@ function dbReady() {
             var request = indexedDB.open(DB_NAME, DB_VERSION);
             
             request.onerror = function(event) {
-                console.error('IndexedDB error:', event.target.error);
+                console.error('❌ IndexedDB error:', event.target.error);
                 reject(event.target.error);
             };
             
@@ -235,26 +238,12 @@ function dbReady() {
                 stores.forEach(function(name) {
                     if (!d.objectStoreNames.contains(name)) {
                         var store = d.createObjectStore(name, { keyPath: 'id', autoIncrement: true });
-                        if (name === 'users') store.createIndex('username', 'username', { unique: true });
-                        if (name === 'parts') store.createIndex('barcode', 'barcode', { unique: true });
-                        if (name === 'sales') store.createIndex('date', 'date', { unique: false });
-                        if (name === 'debts') store.createIndex('status', 'status', { unique: false });
-                        if (name === 'expenses') store.createIndex('date', 'date', { unique: false });
-                        if (name === 'cash_flow') store.createIndex('date', 'date', { unique: false });
-                        if (name === 'prepared_barcodes') {
-                            store.createIndex('barcode', 'barcode', { unique: true });
-                            store.createIndex('type', 'type', { unique: false });
-                            store.createIndex('used', 'used', { unique: false });
-                        }
-                        if (name === 'settings') {
-                            store.createIndex('key', 'key', { unique: true });
-                        }
                         console.log('✅ Created store: ' + name);
                     }
                 });
             };
         } catch (error) {
-            console.error('Error opening database:', error);
+            console.error('❌ Error opening database:', error);
             reject(error);
         }
     });
@@ -266,10 +255,14 @@ function getAllFromStore(storeName) {
     return new Promise(function(resolve, reject) {
         dbReady().then(function(dbInstance) {
             try {
-                var tx = dbInstance.transaction([storeName], 'readonly');
+                var tx = dbInstance.transaction(storeName, 'readonly');
                 var request = tx.objectStore(storeName).getAll();
-                request.onsuccess = function() { resolve(request.result || []); };
-                request.onerror = function() { reject(request.error); };
+                request.onsuccess = function() { 
+                    resolve(request.result || []); 
+                };
+                request.onerror = function() { 
+                    reject(request.error); 
+                };
             } catch (error) {
                 reject(error);
             }
@@ -281,10 +274,14 @@ function addToStore(storeName, data) {
     return new Promise(function(resolve, reject) {
         dbReady().then(function(dbInstance) {
             try {
-                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var tx = dbInstance.transaction(storeName, 'readwrite');
                 var request = tx.objectStore(storeName).add(data);
-                request.onsuccess = function() { resolve(request.result); };
-                request.onerror = function() { reject(request.error); };
+                request.onsuccess = function() { 
+                    resolve(request.result); 
+                };
+                request.onerror = function() { 
+                    reject(request.error); 
+                };
             } catch (error) {
                 reject(error);
             }
@@ -296,10 +293,14 @@ function updateInStore(storeName, data) {
     return new Promise(function(resolve, reject) {
         dbReady().then(function(dbInstance) {
             try {
-                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var tx = dbInstance.transaction(storeName, 'readwrite');
                 var request = tx.objectStore(storeName).put(data);
-                request.onsuccess = function() { resolve(request.result); };
-                request.onerror = function() { reject(request.error); };
+                request.onsuccess = function() { 
+                    resolve(request.result); 
+                };
+                request.onerror = function() { 
+                    reject(request.error); 
+                };
             } catch (error) {
                 reject(error);
             }
@@ -311,10 +312,14 @@ function deleteFromStore(storeName, id) {
     return new Promise(function(resolve, reject) {
         dbReady().then(function(dbInstance) {
             try {
-                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var tx = dbInstance.transaction(storeName, 'readwrite');
                 var request = tx.objectStore(storeName).delete(id);
-                request.onsuccess = function() { resolve(); };
-                request.onerror = function() { reject(request.error); };
+                request.onsuccess = function() { 
+                    resolve(); 
+                };
+                request.onerror = function() { 
+                    reject(request.error); 
+                };
             } catch (error) {
                 reject(error);
             }
@@ -326,10 +331,14 @@ function clearStore(storeName) {
     return new Promise(function(resolve, reject) {
         dbReady().then(function(dbInstance) {
             try {
-                var tx = dbInstance.transaction([storeName], 'readwrite');
+                var tx = dbInstance.transaction(storeName, 'readwrite');
                 var request = tx.objectStore(storeName).clear();
-                request.onsuccess = function() { resolve(); };
-                request.onerror = function() { reject(request.error); };
+                request.onsuccess = function() { 
+                    resolve(); 
+                };
+                request.onerror = function() { 
+                    reject(request.error); 
+                };
             } catch (error) {
                 reject(error);
             }
@@ -358,21 +367,25 @@ function setSetting(key, value) {
         }
         return addToStore('settings', { key: key, value: value });
     });
-    }
+}
+
+console.log('✅ دوال قاعدة البيانات جاهزة');
     // ============================================================
-// الجزء 3: تسجيل الدخول والصلاحيات والثيم
+// الجزء 3: تهيئة البيانات وتسجيل الدخول
 // ============================================================
 
 function initDefaultData() {
+    console.log('🔄 بدء تهيئة البيانات...');
+    
     return getAllFromStore('users').then(function(users) {
         var promises = [];
         
         if (users.length === 0) {
+            console.log('📝 إضافة مستخدمين افتراضيين...');
             promises.push(addToStore('users', { username: 'admin', password: ADMIN_PASS, role: 'admin', name: 'المدير', createdAt: new Date().toISOString() }));
             promises.push(addToStore('users', { username: 'employee', password: EMPLOYEE_PASS, role: 'employee', name: 'موظف', createdAt: new Date().toISOString() }));
         }
         
-        // إعدادات افتراضية
         return getAllFromStore('settings').then(function(settings) {
             var defaultSettings = {
                 shopName: 'مركز وسام للإلكترونيات',
@@ -390,6 +403,7 @@ function initDefaultData() {
             
             for (var key in defaultSettings) {
                 if (!existingKeys[key]) {
+                    console.log('📝 إضافة إعداد: ' + key);
                     promises.push(addToStore('settings', { key: key, value: defaultSettings[key] }));
                 }
             }
@@ -399,7 +413,7 @@ function initDefaultData() {
     }).then(function() {
         console.log('✅ تم تهيئة البيانات الافتراضية');
     }).catch(function(error) {
-        console.error('Error initializing data:', error);
+        console.error('❌ خطأ في تهيئة البيانات:', error);
     });
 }
 
@@ -412,9 +426,13 @@ function doLogin() {
         return;
     }
 
+    console.log('🔑 محاولة تسجيل الدخول...');
+    
     dbReady().then(function() {
         return getAllFromStore('users');
     }).then(function(users) {
+        console.log('👥 عدد المستخدمين:', users.length);
+        
         var user = null;
         for (var i = 0; i < users.length; i++) {
             if (users[i].password === password) {
@@ -422,13 +440,17 @@ function doLogin() {
                 break;
             }
         }
+        
         if (user) {
             loginAttempts = 0;
             currentUser = user;
+            console.log('✅ تم تسجيل الدخول بنجاح:', user.name);
+            
             loginScreen.classList.add('hidden');
             header.style.display = 'flex';
             content.style.display = 'block';
             tabs.style.display = 'flex';
+            
             applyPermissions();
             loadDashboardStats();
             showToast('✅ مرحباً ' + user.name);
@@ -446,7 +468,7 @@ function doLogin() {
             }
         }
     }).catch(function(error) {
-        console.error('Login error:', error);
+        console.error('❌ خطأ في تسجيل الدخول:', error);
         loginError.textContent = '⚠️ خطأ في النظام، الرجاء المحاولة مرة أخرى';
     });
 }
@@ -497,6 +519,8 @@ function changeTheme() {
 }
 
 function switchTab(id) {
+    console.log('🔄 التبديل إلى التبويب:', id);
+    
     if (id !== 'scan') stopBarcodeScanner();
 
     document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
@@ -504,6 +528,7 @@ function switchTab(id) {
     
     var tab = document.getElementById('t-' + id);
     var btn = document.querySelector('.tabs button[data-tab="' + id + '"]');
+    
     if (tab) tab.classList.add('active');
     if (btn) btn.classList.add('active');
     
@@ -525,7 +550,12 @@ function switchTab(id) {
     };
     
     if (loaders[id]) {
-        loaders[id]();
+        try {
+            loaders[id]();
+        } catch (error) {
+            console.error('❌ خطأ في تحميل التبويب:', id, error);
+            showToast('⚠️ حدث خطأ في تحميل التبويب');
+        }
     }
 }
 
@@ -554,14 +584,21 @@ function openModal(html) {
 
 function closeModal() {
     document.getElementById('modalOverlay').classList.remove('show');
-    }
+}
+
+console.log('✅ دوال تسجيل الدخول جاهزة');
     // ============================================================
 // الجزء 4: لوحة التحكم والمخزن
 // ============================================================
 
 function loadDashboardStats() {
+    console.log('📊 تحميل لوحة التحكم...');
+    
     var container = document.getElementById('dashboardStats');
-    if (!container) return;
+    if (!container) {
+        console.error('❌ عنصر dashboardStats غير موجود');
+        return;
+    }
 
     Promise.all([
         getAllFromStore('parts'),
@@ -608,8 +645,10 @@ function loadDashboardStats() {
                 </div>
             </div>
         `;
+        
+        console.log('✅ تم تحميل لوحة التحكم');
     }).catch(function(error) {
-        console.error('Error loading dashboard:', error);
+        console.error('❌ خطأ في تحميل لوحة التحكم:', error);
         container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ في تحميل البيانات</p>';
     });
 }
@@ -618,6 +657,8 @@ function loadDashboardStats() {
 // إدارة المخزن
 // ============================================================
 function loadStoreTab() {
+    console.log('📦 تحميل تبويب المخزن...');
+    
     var container = document.getElementById('t-store');
     if (!container) return;
 
@@ -929,12 +970,14 @@ function exportPartsToCSV() {
 function quickAddToCart(id) {
     addPartToCart(id);
     switchTab('sales');
-                }
+}
     // ============================================================
 // الجزء 6: المبيعات (مع حقل التاريخ)
 // ============================================================
 
 function loadSalesTab() {
+    console.log('🛒 تحميل تبويب المبيعات...');
+    
     var container = document.getElementById('t-sales');
     if (!container) return;
 
@@ -1315,8 +1358,8 @@ function shareWhatsApp() {
     }
     message += '%0A*الإجمالي: ' + total + ' ل.س*';
     window.open('https://wa.me/?text=' + message, '_blank');
-    }
-// ============================================================
+}
+    // ============================================================
 // الجزء 7: المصاريف (مع تعديل/حذف فردي)
 // ============================================================
 
@@ -1556,12 +1599,14 @@ function exportExpensesToCSV() {
         console.error('Error exporting expenses:', error);
         showToast('❌ حدث خطأ');
     });
-    }
+}
     // ============================================================
-// الجزء 8: الصيانة (مع زر واتساب) - الجزء الأول
+// الجزء 8: الصيانة (مع زر واتساب)
 // ============================================================
 
 function loadRepairTab() {
+    console.log('🔧 تحميل تبويب الصيانة...');
+    
     var container = document.getElementById('t-repair');
     container.innerHTML = `
         <div class="card">
@@ -1942,9 +1987,10 @@ function saveRepair() {
         console.error('Error saving repair:', error);
         showToast('❌ حدث خطأ في حفظ الصيانة');
     });
-            }
+}
+
 // ============================================================
-// الجزء 9: الصيانة (استكمال) - حذف واستلام وواتساب
+// دوال التعديل والحذف والاستلام وواتساب
 // ============================================================
 
 function editRepair(repairId) {
@@ -2347,7 +2393,8 @@ function editRepairStatus(repairId) {
             showToast('❌ الصيانة غير موجودة');
             return;
         }
-openModal(`
+
+        openModal(`
             <h3>🔧 تغيير حالة الصيانة</h3>
             <p><strong>${repair.customerName}</strong> - ${repair.deviceType}</p>
             <select id="newRepairStatus" style="margin-bottom:0">
@@ -2456,9 +2503,9 @@ function processRepairPayment(repairId) {
         console.error('Error processing repair payment:', error);
         showToast('❌ حدث خطأ');
     });
-    }
-// ============================================================
-// الجزء 10: المال، التقارير، الباركودات، الإعدادات، النسخ الاحتياطي
+}
+    // ============================================================
+// الجزء 9: المال، التقارير، الباركودات، الإعدادات، النسخ الاحتياطي
 // ============================================================
 
 // ============================================================
@@ -3217,9 +3264,6 @@ function printBarcodeBatch() {
 // ============================================================
 // الإعدادات
 // ============================================================
-    // ============================================================
-// الإعدادات
-// ============================================================
 function loadSettingsTab() {
     var container = document.getElementById('t-settings');
     if (currentUser && currentUser.role === 'employee') {
@@ -3427,6 +3471,8 @@ console.log('🚀 مركز وسام للإلكترونيات - WissamFinalV18');
 console.log('👥 المدير: 1234 | الموظف: 1111');
 
 function initApp() {
+    console.log('🔄 بدء تهيئة التطبيق...');
+    
     dbReady().then(function() {
         console.log('✅ قاعدة البيانات جاهزة');
         return initDefaultData();
@@ -3435,6 +3481,7 @@ function initApp() {
         if (currentUser) {
             loadDashboardStats();
         }
+        console.log('✅ التطبيق جاهز للاستخدام');
     }).catch(function(error) {
         console.error('❌ خطأ في تهيئة التطبيق:', error);
         showToast('⚠️ حدث خطأ في تهيئة التطبيق');
@@ -3463,7 +3510,7 @@ window.sendWhatsAppReady = sendWhatsAppReady;
 // معالجة الأخطاء العامة
 // ============================================================
 window.addEventListener('unhandledrejection', function(event) {
-    console.error('Unhandled rejection:', event.reason);
+    console.error('❌ Unhandled rejection:', event.reason);
 });
 
 window.addEventListener('beforeunload', function() {
