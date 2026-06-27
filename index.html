@@ -359,3 +359,199 @@ function setSetting(key, value) {
         return addToStore('settings', { key: key, value: value });
     });
     }
+    // ============================================================
+// الجزء 3: تسجيل الدخول والصلاحيات والثيم
+// ============================================================
+
+function initDefaultData() {
+    return getAllFromStore('users').then(function(users) {
+        var promises = [];
+        
+        if (users.length === 0) {
+            promises.push(addToStore('users', { username: 'admin', password: ADMIN_PASS, role: 'admin', name: 'المدير', createdAt: new Date().toISOString() }));
+            promises.push(addToStore('users', { username: 'employee', password: EMPLOYEE_PASS, role: 'employee', name: 'موظف', createdAt: new Date().toISOString() }));
+        }
+        
+        // إعدادات افتراضية
+        return getAllFromStore('settings').then(function(settings) {
+            var defaultSettings = {
+                shopName: 'مركز وسام للإلكترونيات',
+                shopAddress: 'ريف دمشق - مخيم السيدة زينب',
+                shopPhone1: '0937572101',
+                shopPhone2: '0956562865',
+                adminPassword: ADMIN_PASS,
+                employeePassword: EMPLOYEE_PASS
+            };
+            
+            var existingKeys = {};
+            for (var i = 0; i < settings.length; i++) {
+                existingKeys[settings[i].key] = true;
+            }
+            
+            for (var key in defaultSettings) {
+                if (!existingKeys[key]) {
+                    promises.push(addToStore('settings', { key: key, value: defaultSettings[key] }));
+                }
+            }
+            
+            return Promise.all(promises);
+        });
+    }).then(function() {
+        console.log('✅ تم تهيئة البيانات الافتراضية');
+    }).catch(function(error) {
+        console.error('Error initializing data:', error);
+    });
+}
+
+function doLogin() {
+    var password = passInput.value.trim();
+    loginError.textContent = '';
+
+    if (!password) {
+        loginError.textContent = '⚠️ الرجاء إدخال كلمة المرور';
+        return;
+    }
+
+    dbReady().then(function() {
+        return getAllFromStore('users');
+    }).then(function(users) {
+        var user = null;
+        for (var i = 0; i < users.length; i++) {
+            if (users[i].password === password) {
+                user = users[i];
+                break;
+            }
+        }
+        if (user) {
+            loginAttempts = 0;
+            currentUser = user;
+            loginScreen.classList.add('hidden');
+            header.style.display = 'flex';
+            content.style.display = 'block';
+            tabs.style.display = 'flex';
+            applyPermissions();
+            loadDashboardStats();
+            showToast('✅ مرحباً ' + user.name);
+        } else {
+            loginAttempts++;
+            var remaining = MAX_LOGIN_ATTEMPTS - loginAttempts;
+            loginError.textContent = '❌ كلمة مرور خاطئة (تبقى ' + remaining + ' محاولات)';
+            passInput.value = '';
+            passInput.focus();
+
+            if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+                loginError.textContent = '🔒 تم تجاوز عدد المحاولات، الرجاء إعادة تحميل الصفحة';
+                passInput.disabled = true;
+                document.querySelector('.login-btn').disabled = true;
+            }
+        }
+    }).catch(function(error) {
+        console.error('Login error:', error);
+        loginError.textContent = '⚠️ خطأ في النظام، الرجاء المحاولة مرة أخرى';
+    });
+}
+
+function logout() {
+    if (confirm('هل تريد تسجيل الخروج؟')) {
+        currentUser = null;
+        stopBarcodeScanner();
+        loginScreen.classList.remove('hidden');
+        header.style.display = 'none';
+        content.style.display = 'none';
+        tabs.style.display = 'none';
+        passInput.value = '';
+        passInput.disabled = false;
+        document.querySelector('.login-btn').disabled = false;
+        loginError.textContent = '';
+        showToast('👋 تم تسجيل الخروج');
+    }
+}
+
+passInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') doLogin();
+});
+
+function applyPermissions() {
+    if (!currentUser) return;
+    document.getElementById('headerTitle').innerHTML = '<i class="fa-solid fa-microchip"></i> مركز وسام - ' + currentUser.name;
+    
+    var restrictedTabs = ['money', 'expenses', 'reports', 'settings'];
+    if (currentUser.role === 'employee') {
+        restrictedTabs.forEach(function(tab) {
+            var btn = document.querySelector('.tabs button[data-tab="' + tab + '"]');
+            if (btn) btn.style.display = 'none';
+        });
+    } else {
+        restrictedTabs.forEach(function(tab) {
+            var btn = document.querySelector('.tabs button[data-tab="' + tab + '"]');
+            if (btn) btn.style.display = 'flex';
+        });
+    }
+}
+
+function changeTheme() {
+    themeIndex = (themeIndex + 1) % themes.length;
+    document.body.className = 'theme-' + themes[themeIndex];
+    var names = { blue: 'أزرق', green: 'أخضر', purple: 'بنفسجي' };
+    showToast('🎨 الثيم: ' + names[themes[themeIndex]]);
+}
+
+function switchTab(id) {
+    if (id !== 'scan') stopBarcodeScanner();
+
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
+    
+    var tab = document.getElementById('t-' + id);
+    var btn = document.querySelector('.tabs button[data-tab="' + id + '"]');
+    if (tab) tab.classList.add('active');
+    if (btn) btn.classList.add('active');
+    
+    content.scrollTop = 0;
+
+    var loaders = {
+        home: loadDashboardStats,
+        store: loadStoreTab,
+        sales: loadSalesTab,
+        returns: loadReturnsTab,
+        debts: loadDebtsTab,
+        repair: loadRepairTab,
+        money: loadMoneyTab,
+        expenses: loadExpensesTab,
+        reports: loadReportsTab,
+        barcode: loadBarcodeTab,
+        scan: loadScanTab,
+        settings: loadSettingsTab
+    };
+    
+    if (loaders[id]) {
+        loaders[id]();
+    }
+}
+
+document.querySelectorAll('.tabs button').forEach(function(b) {
+    b.addEventListener('click', function() {
+        switchTab(this.getAttribute('data-tab'));
+    });
+});
+
+var toastTimeout = null;
+
+function showToast(message, duration) {
+    duration = duration || 2000;
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(function() {
+        toast.classList.remove('show');
+    }, duration);
+}
+
+function openModal(html) {
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+    }
