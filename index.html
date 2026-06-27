@@ -930,4 +930,1016 @@ function quickAddToCart(id) {
     addPartToCart(id);
     switchTab('sales');
                 }
+    // ============================================================
+// الجزء 6: المبيعات (مع حقل التاريخ)
+// ============================================================
+
+function loadSalesTab() {
+    var container = document.getElementById('t-sales');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-cart-shopping"></i> فاتورة</h3>
+            <div class="flex">
+                <input type="date" id="saleDate" value="${new Date().toISOString().split('T')[0]}" style="flex:1;margin-bottom:0">
+                <label style="font-size:12px;color:#666;white-space:nowrap;margin-right:8px">📅 التاريخ</label>
+            </div>
+            <input type="text" id="salesSearchPart" placeholder="🔍 بحث عن قطعة..." oninput="searchPartsForSale()">
+            <div id="partsSearchResults" style="max-height:150px;overflow-y:auto"></div>
+            <div id="cartItems"><p class="empty-state">🛒 السلة فارغة</p></div>
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px">
+                <span>الإجمالي: </span><span id="cartTotal" style="font-weight:700;font-size:18px">0</span> ل.س
+            </div>
+            <div class="flex flex-wrap mt-8">
+                <button class="btn btn-success flex-1" onclick="completeSale('cash')">💵 نقدي</button>
+                <button class="btn btn-warning flex-1" onclick="completeSale('debt')">📋 آجل</button>
+                <button class="btn btn-danger btn-sm" onclick="clearCart()"><i class="fa-solid fa-trash"></i></button>
+                <button class="btn" style="background:#25D366;color:#FFF" onclick="shareWhatsApp()"><i class="fa-brands fa-whatsapp"></i></button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>📋 آخر المبيعات</h3>
+            <div id="recentSales"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    updateCartDisplay();
+    loadRecentSales();
+}
+
+function searchPartsForSale() {
+    var input = document.getElementById('salesSearchPart');
+    var container = document.getElementById('partsSearchResults');
+    if (!input || !container) return;
+
+    var query = input.value.toLowerCase().trim();
+    if (query.length < 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    getAllFromStore('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if ((p.name && p.name.toLowerCase().indexOf(query) !== -1) ||
+                (p.barcode && p.barcode.toLowerCase().indexOf(query) !== -1)) {
+                results.push(p);
+            }
+        }
+
+        if (results.length === 0) {
+            container.innerHTML = '<p class="empty-state">❌ لا توجد نتائج</p>';
+            return;
+        }
+
+        var html = '';
+        var maxResults = Math.min(results.length, 8);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            var inCart = false;
+            for (var k = 0; k < currentCart.length; k++) {
+                if (currentCart[k].partId === p.id) { inCart = true; break; }
+            }
+            var stockLabel = p.quantity <= 0 ? ' (نفذ)' : p.quantity <= 5 ? ' (منخفض)' : '';
+            html += `
+                <div style="background:#E8F5E9;padding:8px;cursor:pointer;border-radius:6px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" 
+                     onclick="addPartToCart(${p.id})">
+                    <span>${p.name} ${stockLabel}</span>
+                    <span style="font-weight:700">${p.sellPrice} ل.س</span>
+                    ${inCart ? '<span class="badge badge-info">' + currentCart.find(function(c) { return c.partId === p.id; }).quantity + '</span>' : ''}
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error searching parts:', error);
+    });
+}
+
+function addPartToCart(partId) {
+    getAllFromStore('parts').then(function(parts) {
+        var part = null;
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i].id === partId) {
+                part = parts[i];
+                break;
+            }
+        }
+        if (!part) {
+            showToast('❌ القطعة غير موجودة');
+            return;
+        }
+        if (part.quantity <= 0) {
+            showToast('⚠️ القطعة نفذت من المخزن');
+            return;
+        }
+
+        var existing = null;
+        for (var j = 0; j < currentCart.length; j++) {
+            if (currentCart[j].partId === partId) {
+                existing = currentCart[j];
+                break;
+            }
+        }
+        if (existing) {
+            if (existing.quantity >= part.quantity) {
+                showToast('⚠️ الكمية المطلوبة غير متوفرة');
+                return;
+            }
+            existing.quantity++;
+        } else {
+            currentCart.push({ partId: part.id, name: part.name, price: part.sellPrice, quantity: 1 });
+        }
+        updateCartDisplay();
+        showToast('✅ تم إضافة ' + part.name);
+        document.getElementById('salesSearchPart').value = '';
+        document.getElementById('partsSearchResults').innerHTML = '';
+    }).catch(function(error) {
+        console.error('Error adding to cart:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function updateCartDisplay() {
+    var container = document.getElementById('cartItems');
+    var totalEl = document.getElementById('cartTotal');
+    if (!container) return;
+
+    if (currentCart.length === 0) {
+        container.innerHTML = '<p class="empty-state">🛒 السلة فارغة</p>';
+        if (totalEl) totalEl.textContent = '0';
+        return;
+    }
+
+    var total = 0;
+    var html = '';
+    for (var i = 0; i < currentCart.length; i++) {
+        var item = currentCart[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        html += `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #EEE">
+                <div>
+                    <strong>${item.name}</strong>
+                    <span class="text-muted"> ×${item.quantity}</span>
+                </div>
+                <div>
+                    <span>${subtotal} ل.س</span>
+                    <button class="btn btn-sm btn-danger" onclick="removeCartItem(${i})" style="margin-right:6px">✕</button>
+                </div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    if (totalEl) totalEl.textContent = total;
+}
+
+function removeCartItem(index) {
+    if (index >= 0 && index < currentCart.length) {
+        currentCart.splice(index, 1);
+        updateCartDisplay();
+    }
+}
+
+function clearCart() {
+    if (currentCart.length === 0) return;
+    if (confirm('هل تريد إفراغ السلة؟')) {
+        currentCart = [];
+        updateCartDisplay();
+        showToast('🗑️ تم إفراغ السلة');
+    }
+}
+
+function completeSale(paymentType) {
+    if (currentCart.length === 0) {
+        showToast('⚠️ السلة فارغة');
+        return;
+    }
+
+    var total = 0;
+    for (var i = 0; i < currentCart.length; i++) {
+        total += currentCart[i].price * currentCart[i].quantity;
+    }
+
+    var customerName = '';
+    if (paymentType === 'debt') {
+        customerName = prompt('👤 اسم الزبون:');
+        if (!customerName || customerName.trim() === '') {
+            showToast('⚠️ اسم الزبون مطلوب');
+            return;
+        }
+        customerName = customerName.trim();
+    }
+
+    var saleDateInput = document.getElementById('saleDate');
+    var saleDate = saleDateInput ? saleDateInput.value : new Date().toISOString().split('T')[0];
+    if (!saleDate) saleDate = new Date().toISOString().split('T')[0];
+
+    var saleData = {
+        items: JSON.parse(JSON.stringify(currentCart)),
+        total: total,
+        paymentType: paymentType,
+        customerName: customerName || '',
+        date: new Date(saleDate + 'T00:00:00').toISOString()
+    };
+
+    addToStore('sales', saleData).then(function(saleId) {
+        return addToStore('cash_flow', {
+            type: 'income',
+            category: 'مبيعات',
+            amount: total,
+            description: 'فاتورة #' + saleId + (customerName ? ' - ' + customerName : ''),
+            date: new Date(saleDate + 'T00:00:00').toISOString()
+        });
+    }).then(function() {
+        return getAllFromStore('parts');
+    }).then(function(parts) {
+        var promises = [];
+        for (var j = 0; j < currentCart.length; j++) {
+            var cartItem = currentCart[j];
+            for (var k = 0; k < parts.length; k++) {
+                if (parts[k].id === cartItem.partId) {
+                    parts[k].quantity = Math.max(0, parts[k].quantity - cartItem.quantity);
+                    promises.push(updateInStore('parts', parts[k]));
+                    break;
+                }
+            }
+        }
+        return Promise.all(promises);
+    }).then(function() {
+        if (paymentType === 'debt') {
+            return addToStore('debts', {
+                customerName: customerName,
+                total: total,
+                paid: 0,
+                remaining: total,
+                status: 'pending',
+                date: new Date(saleDate + 'T00:00:00').toISOString()
+            });
+        }
+    }).then(function() {
+        currentCart = [];
+        updateCartDisplay();
+        loadRecentSales();
+        loadAllParts();
+        showToast('✅ تمت عملية البيع - ' + total + ' ل.س');
+    }).catch(function(error) {
+        console.error('Error completing sale:', error);
+        showToast('❌ حدث خطأ في إتمام البيع');
+    });
+}
+
+function loadRecentSales() {
+    var container = document.getElementById('recentSales');
+    if (!container) return;
+
+    getAllFromStore('sales').then(function(sales) {
+        if (sales.length === 0) {
+            container.innerHTML = '<p class="empty-state">📭 لا توجد مبيعات</p>';
+            return;
+        }
+
+        sales.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        var html = '';
+        var maxItems = Math.min(sales.length, 10);
+        for (var i = 0; i < maxItems; i++) {
+            var s = sales[i];
+            var items = '';
+            if (s.items) {
+                var itemNames = [];
+                for (var j = 0; j < s.items.length; j++) {
+                    itemNames.push(s.items[j].name);
+                }
+                items = itemNames.join(', ');
+            }
+            html += `
+                <div style="padding:6px 0;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span style="font-weight:700">${s.total} ل.س</span>
+                        ${s.customerName ? '<span class="badge badge-warning">' + s.customerName + '</span>' : ''}
+                        <div class="text-muted">${items}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span class="text-muted">${formatDate(s.date)}</span>
+                        <button class="btn btn-sm btn-danger" onclick="deleteSale(${s.id})" title="حذف الفاتورة">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading recent sales:', error);
+        container.innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function deleteSale(saleId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذه الفاتورة؟\nسيتم إعادة القطع إلى المخزن.')) return;
     
+    getAllFromStore('sales').then(function(sales) {
+        var sale = null;
+        for (var i = 0; i < sales.length; i++) {
+            if (sales[i].id === saleId) {
+                sale = sales[i];
+                break;
+            }
+        }
+        if (!sale) {
+            showToast('❌ الفاتورة غير موجودة');
+            return;
+        }
+
+        if (sale.items && sale.items.length > 0) {
+            return getAllFromStore('parts').then(function(parts) {
+                var promises = [];
+                for (var j = 0; j < sale.items.length; j++) {
+                    var item = sale.items[j];
+                    for (var k = 0; k < parts.length; k++) {
+                        if (parts[k].id === item.partId) {
+                            parts[k].quantity = (parts[k].quantity || 0) + item.quantity;
+                            promises.push(updateInStore('parts', parts[k]));
+                            break;
+                        }
+                    }
+                }
+                return Promise.all(promises);
+            }).then(function() {
+                return getAllFromStore('cash_flow').then(function(cashFlow) {
+                    var promises = [];
+                    for (var l = 0; l < cashFlow.length; l++) {
+                        var cf = cashFlow[l];
+                        if (cf.description && cf.description.indexOf('فاتورة #' + saleId) !== -1) {
+                            promises.push(deleteFromStore('cash_flow', cf.id));
+                        }
+                    }
+                    return Promise.all(promises);
+                });
+            }).then(function() {
+                return deleteFromStore('sales', saleId);
+            });
+        } else {
+            return deleteFromStore('sales', saleId);
+        }
+    }).then(function() {
+        showToast('🗑️ تم حذف الفاتورة وإعادة القطع للمخزن');
+        loadRecentSales();
+        loadAllParts();
+        if (document.getElementById('t-money').classList.contains('active')) {
+            loadMoneyTab();
+        }
+        if (document.getElementById('t-reports').classList.contains('active')) {
+            loadReport();
+        }
+    }).catch(function(error) {
+        console.error('Error deleting sale:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
+}
+
+function shareWhatsApp() {
+    if (currentCart.length === 0) {
+        showToast('⚠️ السلة فارغة');
+        return;
+    }
+
+    var total = 0;
+    var message = '🧾 *مركز وسام*%0A';
+    for (var i = 0; i < currentCart.length; i++) {
+        var item = currentCart[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        message += '• ' + item.name + ' ×' + item.quantity + ' = ' + subtotal + ' ل.س%0A';
+    }
+    message += '%0A*الإجمالي: ' + total + ' ل.س*';
+    window.open('https://wa.me/?text=' + message, '_blank');
+    }
+// ============================================================
+// الجزء 7: المصاريف (مع تعديل/حذف فردي)
+// ============================================================
+
+function showQuickExpense() {
+    if (currentUser && currentUser.role === 'employee') {
+        showToast('⛔ غير مسموح للموظفين');
+        return;
+    }
+    openModal(`
+        <h3>💸 إضافة مصروف</h3>
+        <input type="text" id="expenseDesc" placeholder="الوصف *">
+        <input type="number" id="expenseAmount" placeholder="المبلغ *">
+        <input type="text" id="expenseCategory" placeholder="التصنيف (اختياري)">
+        <input type="date" id="expenseDate" value="${new Date().toISOString().split('T')[0]}">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveQuickExpense()">
+            <i class="fa-solid fa-save"></i> حفظ
+        </button>
+    `);
+}
+
+function saveQuickExpense() {
+    var desc = document.getElementById('expenseDesc').value.trim();
+    var amount = parseFloat(document.getElementById('expenseAmount').value);
+    var category = document.getElementById('expenseCategory').value.trim();
+    var expenseDate = document.getElementById('expenseDate').value || new Date().toISOString().split('T')[0];
+
+    if (!desc || !amount || amount <= 0) {
+        showToast('⚠️ الوصف والمبلغ مطلوبان');
+        return;
+    }
+
+    addToStore('expenses', {
+        description: desc,
+        amount: amount,
+        category: category || 'عام',
+        date: new Date(expenseDate + 'T00:00:00').toISOString()
+    }).then(function() {
+        return addToStore('cash_flow', {
+            type: 'expense',
+            category: 'مصروف',
+            amount: amount,
+            description: desc,
+            date: new Date(expenseDate + 'T00:00:00').toISOString()
+        });
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم إضافة المصروف');
+        if (document.getElementById('t-expenses').classList.contains('active')) {
+            loadExpensesTab();
+        }
+        if (document.getElementById('t-money').classList.contains('active')) {
+            loadMoneyTab();
+        }
+    }).catch(function(error) {
+        console.error('Error saving expense:', error);
+        showToast('❌ حدث خطأ في الحفظ');
+    });
+}
+
+function loadExpensesTab() {
+    if (currentUser && currentUser.role === 'employee') {
+        document.getElementById('t-expenses').innerHTML = '<p class="empty-state">⛔ غير مسموح للموظفين</p>';
+        return;
+    }
+
+    var container = document.getElementById('t-expenses');
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-receipt"></i> المصاريف</h3>
+            <div class="flex mb-8">
+                <button class="btn btn-primary" onclick="showQuickExpense()"><i class="fa-solid fa-plus"></i> إضافة</button>
+                <button class="btn btn-sm btn-warning" onclick="exportExpensesToCSV()"><i class="fa-solid fa-file-export"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="clearAllExpenses()"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <div id="expensesList"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+
+    getAllFromStore('expenses').then(function(expenses) {
+        var list = document.getElementById('expensesList');
+        if (!list) return;
+
+        if (expenses.length === 0) {
+            list.innerHTML = '<p class="empty-state">📭 لا توجد مصاريف</p>';
+            return;
+        }
+
+        expenses.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        var total = 0;
+        for (var i = 0; i < expenses.length; i++) {
+            total += expenses[i].amount;
+        }
+        var html = '<div class="text-muted">الإجمالي: <strong>' + total + '</strong> ل.س</div>';
+        var maxItems = Math.min(expenses.length, 50);
+        for (var j = 0; j < maxItems; j++) {
+            var e = expenses[j];
+            html += `
+                <div style="padding:8px 0;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span>${e.description}</span>
+                        ${e.category ? '<span class="badge badge-info">' + e.category + '</span>' : ''}
+                        <div class="text-muted">${formatDate(e.date)}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="font-weight:700">${e.amount}</span> ل.س
+                        <button class="btn btn-sm btn-primary" onclick="editExpense(${e.id})"><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteExpense(${e.id})"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        }
+        list.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error loading expenses:', error);
+        document.getElementById('expensesList').innerHTML = '<p class="empty-state">⚠️ حدث خطأ</p>';
+    });
+}
+
+function editExpense(expenseId) {
+    getAllFromStore('expenses').then(function(expenses) {
+        var expense = null;
+        for (var i = 0; i < expenses.length; i++) {
+            if (expenses[i].id === expenseId) {
+                expense = expenses[i];
+                break;
+            }
+        }
+        if (!expense) {
+            showToast('❌ المصروف غير موجود');
+            return;
+        }
+
+        var dateStr = expense.date ? expense.date.split('T')[0] : new Date().toISOString().split('T')[0];
+
+        openModal(`
+            <h3>✏️ تعديل مصروف</h3>
+            <input type="text" id="editExpenseDesc" placeholder="الوصف *" value="${expense.description || ''}">
+            <input type="number" id="editExpenseAmount" placeholder="المبلغ *" value="${expense.amount || 0}">
+            <input type="text" id="editExpenseCategory" placeholder="التصنيف" value="${expense.category || ''}">
+            <input type="date" id="editExpenseDate" value="${dateStr}">
+            <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="updateExpense(${expenseId})">
+                <i class="fa-solid fa-save"></i> تحديث
+            </button>
+        `);
+    });
+}
+
+function updateExpense(expenseId) {
+    var desc = document.getElementById('editExpenseDesc').value.trim();
+    var amount = parseFloat(document.getElementById('editExpenseAmount').value);
+    var category = document.getElementById('editExpenseCategory').value.trim();
+    var expenseDate = document.getElementById('editExpenseDate').value || new Date().toISOString().split('T')[0];
+
+    if (!desc || !amount || amount <= 0) {
+        showToast('⚠️ الوصف والمبلغ مطلوبان');
+        return;
+    }
+
+    getAllFromStore('expenses').then(function(expenses) {
+        var expense = null;
+        for (var i = 0; i < expenses.length; i++) {
+            if (expenses[i].id === expenseId) {
+                expense = expenses[i];
+                break;
+            }
+        }
+        if (!expense) {
+            showToast('❌ المصروف غير موجود');
+            return;
+        }
+
+        expense.description = desc;
+        expense.amount = amount;
+        expense.category = category || 'عام';
+        expense.date = new Date(expenseDate + 'T00:00:00').toISOString();
+
+        return updateInStore('expenses', expense);
+    }).then(function() {
+        closeModal();
+        showToast('✅ تم تحديث المصروف');
+        loadExpensesTab();
+        if (document.getElementById('t-money').classList.contains('active')) {
+            loadMoneyTab();
+        }
+    }).catch(function(error) {
+        console.error('Error updating expense:', error);
+        showToast('❌ حدث خطأ في التحديث');
+    });
+}
+
+function deleteExpense(expenseId) {
+    if (!confirm('⚠️ هل أنت متأكد من حذف هذا المصروف؟')) return;
+
+    deleteFromStore('expenses', expenseId).then(function() {
+        showToast('🗑️ تم حذف المصروف');
+        loadExpensesTab();
+        if (document.getElementById('t-money').classList.contains('active')) {
+            loadMoneyTab();
+        }
+    }).catch(function(error) {
+        console.error('Error deleting expense:', error);
+        showToast('❌ حدث خطأ في الحذف');
+    });
+}
+
+function clearAllExpenses() {
+    if (!confirm('⚠️ هل أنت متأكد من حذف جميع المصاريف؟')) return;
+    clearStore('expenses').then(function() {
+        showToast('🗑️ تم حذف جميع المصاريف');
+        loadExpensesTab();
+    }).catch(function(error) {
+        console.error('Error clearing expenses:', error);
+        showToast('❌ حدث خطأ');
+    });
+}
+
+function exportExpensesToCSV() {
+    getAllFromStore('expenses').then(function(expenses) {
+        if (expenses.length === 0) {
+            showToast('📭 لا توجد بيانات للتصدير');
+            return;
+        }
+        var csv = 'الوصف,المبلغ,التصنيف,التاريخ\n';
+        for (var i = 0; i < expenses.length; i++) {
+            var e = expenses[i];
+            csv += '"' + (e.description || '') + '",' + (e.amount || 0) + ',"' + (e.category || '') + '","' + (e.date || '') + '"\n';
+        }
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'مصاريف_وسام_' + new Date().toISOString().split('T')[0] + '.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ تم التصدير');
+    }).catch(function(error) {
+        console.error('Error exporting expenses:', error);
+        showToast('❌ حدث خطأ');
+    });
+    }
+    // ============================================================
+// الجزء 8: الصيانة (مع زر واتساب) - الجزء الأول
+// ============================================================
+
+function loadRepairTab() {
+    var container = document.getElementById('t-repair');
+    container.innerHTML = `
+        <div class="card">
+            <h3><i class="fa-solid fa-screwdriver-wrench"></i> صيانة جديدة</h3>
+            <div class="grid-2">
+                <input type="text" id="repairCustomer" placeholder="اسم الزبون *">
+                <input type="text" id="repairPhone" placeholder="الهاتف">
+            </div>
+            <input type="text" id="repairDevice" placeholder="نوع الجهاز *">
+            <input type="text" id="repairSerial" placeholder="الرقم التسلسلي">
+            <input type="text" id="repairBarcode" placeholder="باركود الجهاز (MT-xxxx)">
+            <textarea id="repairProblem" placeholder="المشكلة..."></textarea>
+            
+            <h4 style="margin-top:10px">🔧 قطع الغيار</h4>
+            <div class="flex">
+                <input type="text" id="repairPartSearch" placeholder="🔍 بحث بالباركود..." class="flex-1" oninput="searchPartByBarcodeForRepair()">
+                <input type="text" id="repairPartNameSearch" placeholder="🔍 بحث بالاسم..." class="flex-1" oninput="searchPartsForRepair()">
+            </div>
+            <div id="repairPartResults" style="max-height:120px;overflow-y:auto"></div>
+            <div id="repairPartsList"><p class="empty-state">لا قطع</p></div>
+            
+            <div style="background:#F5F5F5;padding:10px;border-radius:8px;margin-top:8px">
+                <div class="flex">
+                    <span>تكلفة القطع: <strong id="repairPartsCost">0</strong> ل.س</span>
+                </div>
+                <div class="flex">
+                    <span style="flex:1">أجرة يد: <input type="number" id="repairLabor" value="0" style="width:80px;display:inline" oninput="updateRepairTotal()"></span>
+                    <span style="flex:1">حسم: <input type="number" id="repairDiscount" value="0" style="width:80px;display:inline" oninput="updateRepairTotal()"></span>
+                </div>
+                <div style="font-size:18px;font-weight:700">الإجمالي: <span id="repairTotal" style="color:#4CAF50">0</span> ل.س</div>
+            </div>
+            
+            <div class="flex">
+                <select id="repairPayment" style="flex:1;margin-bottom:0" onchange="toggleRepairPaymentFields()">
+                    <option value="cash">نقدي</option>
+                    <option value="debt">آجل</option>
+                    <option value="partial">جزئي</option>
+                </select>
+                <select id="repairStatus" style="flex:1;margin-bottom:0">
+                    <option value="in_repair">🔧 في الصيانة</option>
+                    <option value="waiting">⏳ قيد الانتظار</option>
+                    <option value="fixed">✅ تم الإصلاح</option>
+                </select>
+            </div>
+            <div id="repairPaymentFields" style="display:none">
+                <input type="number" id="repairPaid" placeholder="المبلغ المدفوع" value="0" oninput="updateRepairTotal()">
+                <div>المتبقي: <strong id="repairRemaining">0</strong> ل.س</div>
+            </div>
+            
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" onclick="saveRepair()">
+                <i class="fa-solid fa-save"></i> حفظ الصيانة
+            </button>
+        </div>
+        
+        <div class="card">
+            <h3>📋 قائمة الصيانات</h3>
+            <div class="flex">
+                <select id="repairFilter" style="flex:1;margin-bottom:0" onchange="loadRepairsList()">
+                    <option value="all">الكل</option>
+                    <option value="in_repair">في الصيانة</option>
+                    <option value="waiting">قيد الانتظار</option>
+                    <option value="fixed">تم الإصلاح</option>
+                </select>
+                <input type="text" id="repairSearch" placeholder="🔍 بحث..." style="flex:1;margin-bottom:0" oninput="loadRepairsList()">
+            </div>
+            <div id="repairsList"><p class="empty-state">⏳ جاري التحميل...</p></div>
+        </div>
+    `;
+    temporaryData.repairParts = [];
+    updateRepairPartsDisplay();
+    updateRepairTotal();
+    loadRepairsList();
+}
+
+function searchPartByBarcodeForRepair() {
+    var input = document.getElementById('repairPartSearch');
+    var container = document.getElementById('repairPartResults');
+    if (!input || !container) return;
+
+    var barcode = input.value.trim();
+    if (barcode.length < 2) {
+        container.innerHTML = '';
+        return;
+    }
+
+    getAllFromStore('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (p.barcode && p.barcode.toLowerCase().indexOf(barcode.toLowerCase()) !== -1) {
+                results.push(p);
+            }
+        }
+
+        if (results.length === 0) {
+            container.innerHTML = '<p class="empty-state">❌ لا توجد قطع بهذا الباركود</p>';
+            return;
+        }
+
+        if (results.length === 1 && results[0].barcode.toLowerCase() === barcode.toLowerCase()) {
+            addPartToRepair(results[0]);
+            input.value = '';
+            container.innerHTML = '<p style="color:#4CAF50">✅ تم إضافة ' + results[0].name + '</p>';
+            return;
+        }
+
+        var html = '';
+        var maxResults = Math.min(results.length, 5);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            html += `
+                <div style="cursor:pointer;padding:6px;background:#F5F5F5;border-radius:4px;margin-bottom:4px" 
+                     onclick="addPartToRepair({id:${p.id}, name:'${p.name}', sellPrice:${p.sellPrice}, quantity:${p.quantity}})">
+                    ${p.name} | ${p.barcode} | ${p.sellPrice} ل.س
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error searching by barcode:', error);
+    });
+}
+
+function searchPartsForRepair() {
+    var input = document.getElementById('repairPartNameSearch');
+    var container = document.getElementById('repairPartResults');
+    if (!input || !container) return;
+
+    var query = input.value.toLowerCase().trim();
+    if (query.length < 2) {
+        container.innerHTML = '';
+        return;
+    }
+
+    getAllFromStore('parts').then(function(parts) {
+        var results = [];
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (p.name && p.name.toLowerCase().indexOf(query) !== -1) {
+                results.push(p);
+            }
+        }
+
+        if (results.length === 0) {
+            container.innerHTML = '<p class="empty-state">❌ لا توجد نتائج</p>';
+            return;
+        }
+
+        var html = '';
+        var maxResults = Math.min(results.length, 8);
+        for (var j = 0; j < maxResults; j++) {
+            var p = results[j];
+            html += `
+                <div style="cursor:pointer;padding:6px;background:#F5F5F5;border-radius:4px;margin-bottom:4px" 
+                     onclick="addPartToRepair({id:${p.id}, name:'${p.name}', sellPrice:${p.sellPrice}, quantity:${p.quantity}})">
+                    ${p.name} | ${p.sellPrice} ل.س
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }).catch(function(error) {
+        console.error('Error searching parts:', error);
+    });
+}
+
+function addPartToRepair(part) {
+    if (part.quantity <= 0) {
+        showToast('⚠️ هذه القطعة غير متوفرة');
+        return;
+    }
+
+    var existing = null;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        if (temporaryData.repairParts[i].partId === part.id) {
+            existing = temporaryData.repairParts[i];
+            break;
+        }
+    }
+    if (existing) {
+        if (existing.quantity < part.quantity) {
+            existing.quantity++;
+        } else {
+            showToast('⚠️ الكمية المطلوبة غير متوفرة');
+            return;
+        }
+    } else {
+        temporaryData.repairParts.push({
+            partId: part.id,
+            name: part.name,
+            price: part.sellPrice,
+            quantity: 1
+        });
+    }
+    updateRepairPartsDisplay();
+    updateRepairTotal();
+    document.getElementById('repairPartResults').innerHTML = '';
+    document.getElementById('repairPartNameSearch').value = '';
+    document.getElementById('repairPartSearch').value = '';
+    showToast('✅ تم إضافة ' + part.name);
+}
+
+function updateRepairPartsDisplay() {
+    var container = document.getElementById('repairPartsList');
+    if (!container) return;
+
+    if (temporaryData.repairParts.length === 0) {
+        container.innerHTML = '<p class="empty-state">لا قطع</p>';
+        document.getElementById('repairPartsCost').textContent = '0';
+        return;
+    }
+
+    var html = '';
+    var total = 0;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        var item = temporaryData.repairParts[i];
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        html += `
+            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #EEE">
+                <span>${item.name} ×${item.quantity}</span>
+                <span>${subtotal} ل.س 
+                    <button class="btn btn-sm btn-danger" onclick="removeRepairPart(${i})">✕</button>
+                </span>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+    document.getElementById('repairPartsCost').textContent = total;
+}
+
+function removeRepairPart(index) {
+    if (index >= 0 && index < temporaryData.repairParts.length) {
+        temporaryData.repairParts.splice(index, 1);
+        updateRepairPartsDisplay();
+        updateRepairTotal();
+    }
+}
+
+function updateRepairTotal() {
+    var partsTotal = 0;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        partsTotal += temporaryData.repairParts[i].price * temporaryData.repairParts[i].quantity;
+    }
+
+    var labor = parseFloat(document.getElementById('repairLabor') ? document.getElementById('repairLabor').value : 0) || 0;
+    var discount = parseFloat(document.getElementById('repairDiscount') ? document.getElementById('repairDiscount').value : 0) || 0;
+    var total = Math.max(0, partsTotal + labor - discount);
+
+    var totalEl = document.getElementById('repairTotal');
+    if (totalEl) totalEl.textContent = total;
+
+    var paid = parseFloat(document.getElementById('repairPaid') ? document.getElementById('repairPaid').value : 0) || 0;
+    var remaining = Math.max(0, total - paid);
+    var remainingEl = document.getElementById('repairRemaining');
+    if (remainingEl) remainingEl.textContent = remaining;
+}
+
+function toggleRepairPaymentFields() {
+    var payment = document.getElementById('repairPayment') ? document.getElementById('repairPayment').value : 'cash';
+    var fields = document.getElementById('repairPaymentFields');
+    if (fields) {
+        fields.style.display = (payment === 'partial') ? 'block' : 'none';
+    }
+}
+
+function generateRepairBarcode() {
+    return getAllFromStore('repairs').then(function(repairs) {
+        var maxNum = 0;
+        for (var i = 0; i < repairs.length; i++) {
+            var r = repairs[i];
+            if (r.deviceBarcode && r.deviceBarcode.indexOf('MT-') === 0) {
+                var num = parseInt(r.deviceBarcode.replace('MT-', ''));
+                if (!isNaN(num) && num > maxNum) maxNum = num;
+            }
+        }
+        return 'MT-' + String(maxNum + 1).padStart(4, '0');
+    });
+}
+
+function saveRepair() {
+    var customer = document.getElementById('repairCustomer').value.trim();
+    var device = document.getElementById('repairDevice').value.trim();
+    var barcode = document.getElementById('repairBarcode').value.trim();
+
+    if (!customer || !device) {
+        showToast('⚠️ اسم الزبون ونوع الجهاز مطلوبان');
+        return;
+    }
+
+    var partsTotal = 0;
+    for (var i = 0; i < temporaryData.repairParts.length; i++) {
+        partsTotal += temporaryData.repairParts[i].price * temporaryData.repairParts[i].quantity;
+    }
+    var labor = parseFloat(document.getElementById('repairLabor').value) || 0;
+    var discount = parseFloat(document.getElementById('repairDiscount').value) || 0;
+    var total = Math.max(0, partsTotal + labor - discount);
+    var paymentType = document.getElementById('repairPayment').value;
+    var paid = paymentType === 'partial' ? (parseFloat(document.getElementById('repairPaid').value) || 0) : 
+               paymentType === 'cash' ? total : 0;
+
+    var saveRepairData = function(finalBarcode) {
+        var repairData = {
+            customerName: customer,
+            phone: document.getElementById('repairPhone').value.trim() || '',
+            deviceType: device,
+            serialNumber: document.getElementById('repairSerial').value.trim() || '',
+            deviceBarcode: finalBarcode,
+            problem: document.getElementById('repairProblem').value.trim() || '',
+            parts: JSON.parse(JSON.stringify(temporaryData.repairParts)),
+            partsCost: partsTotal,
+            laborCost: labor,
+            discount: discount,
+            total: total,
+            paid: paid,
+            remaining: Math.max(0, total - paid),
+            paymentType: paymentType,
+            status: document.getElementById('repairStatus').value || 'in_repair',
+            date: new Date().toISOString(),
+            isReceived: false,
+            receivedDate: null
+        };
+        return addToStore('repairs', repairData);
+    };
+
+    var barcodePromise;
+    if (barcode) {
+        barcodePromise = Promise.resolve(barcode);
+    } else {
+        barcodePromise = generateRepairBarcode();
+    }
+
+    barcodePromise.then(function(finalBarcode) {
+        return saveRepairData(finalBarcode);
+    }).then(function(repairId) {
+        if (paymentType === 'cash' && total > 0) {
+            return addToStore('cash_flow', {
+                type: 'income',
+                category: 'صيانة',
+                amount: total,
+                description: 'صيانة ' + device + ' - ' + customer,
+                date: new Date().toISOString()
+            });
+        }
+    }).then(function() {
+        return getAllFromStore('parts');
+    }).then(function(parts) {
+        var promises = [];
+        for (var j = 0; j < temporaryData.repairParts.length; j++) {
+            var p = temporaryData.repairParts[j];
+            for (var k = 0; k < parts.length; k++) {
+                if (parts[k].id === p.partId) {
+                    parts[k].quantity = Math.max(0, parts[k].quantity - p.quantity);
+                    promises.push(updateInStore('parts', parts[k]));
+                    break;
+                }
+            }
+        }
+        return Promise.all(promises);
+    }).then(function() {
+        temporaryData.repairParts = [];
+        updateRepairPartsDisplay();
+        updateRepairTotal();
+        
+        document.getElementById('repairCustomer').value = '';
+        document.getElementById('repairPhone').value = '';
+        document.getElementById('repairDevice').value = '';
+        document.getElementById('repairSerial').value = '';
+        document.getElementById('repairBarcode').value = '';
+        document.getElementById('repairProblem').value = '';
+        document.getElementById('repairLabor').value = '0';
+        document.getElementById('repairDiscount').value = '0';
+        document.getElementById('repairPaid').value = '0';
+
+        showToast('✅ تم حفظ الصيانة');
+        loadRepairsList();
+        loadAllParts();
+    }).catch(function(error) {
+        console.error('Error saving repair:', error);
+        showToast('❌ حدث خطأ في حفظ الصيانة');
+    });
+            }
